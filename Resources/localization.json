@@ -1,0 +1,21 @@
+{
+  "entries": [
+    { "key": "title", "en": "ADOFAI Editor Tweaks - Chart Rendering", "zh": "ADOFAI 编辑器优化 - 谱面渲染" },
+    { "key": "patchFeatureRenderInputGuard", "en": "Render input guard", "zh": "渲染输入保护" },
+    { "key": "patchFeatureChartRendering", "en": "Chart rendering", "zh": "谱面渲染" },
+    { "key": "chartRenderSelectedRangeWholeLevel", "en": "Whole level", "zh": "整首谱面" },
+    { "key": "chartRenderSelectedRangeActive", "en": "Selected range", "zh": "选中段落" },
+    { "key": "chartRendererGameViewSizeChanged", "en": "The game window size changed during rendering.", "zh": "渲染期间游戏窗口尺寸发生变化。" },
+    { "key": "chartRendererInvalidGameViewSize", "en": "The current game view size is invalid.", "zh": "当前游戏画面尺寸无效。" },
+    { "key": "chartRendererSelectedRangeEditorOnly", "en": "Selected range rendering is available in the editor only.", "zh": "选中段落渲染只能在编辑器中使用。" },
+    { "key": "chartRendererSelectedRangeMissing", "en": "Select at least two continuous tiles first.", "zh": "请先框选至少两个连续砖块。" },
+    { "key": "chartRendererMuxing", "en": "Muxing audio", "zh": "正在合成音频" },
+    { "key": "chartRendererRangeStartTimeout", "en": "Timed out while preparing the selected range.", "zh": "准备选中段落超时。" },
+    { "key": "chartRendererRendering", "en": "Rendering video", "zh": "正在渲染视频" },
+    { "key": "chartRendererWaitingRangeStart", "en": "Preparing selected range", "zh": "正在准备选中段落" },
+    { "key": "chartRendererDone", "en": "Render complete", "zh": "渲染完成" },
+    { "key": "chartRendererFailed", "en": "Render failed", "zh": "渲染失败" },
+    { "key": "chartRendererMissingFfmpeg", "en": "FFmpeg is missing.", "zh": "缺少 FFmpeg。" },
+    { "key": "chartRendererIncompatible", "en": "Chart rendering is unavailable for this game version.", "zh": "当前游戏版本不可用谱面渲染。" }
+  ]
+}
