@@ -113,6 +113,8 @@
         <Message Text="Managed Assemblies Path: $(ManagedAssembliesDir)" Importance="high" />
         <Message Text="Platform: $(OS)" Importance="high" />
 
+        <RemoveDir Directories="$(ModsDir)Resources" Condition="Exists('$(ModsDir)Resources')" />
+        <RemoveDir Directories="$(ModsDir)ThirdParty" Condition="Exists('$(ModsDir)ThirdParty')" />
         <MakeDir Directories="$(ModsDir)" />
         <MakeDir Directories="$(ModsDir)Resources" />
         <MakeDir Directories="$(ModsDir)ThirdParty" />
