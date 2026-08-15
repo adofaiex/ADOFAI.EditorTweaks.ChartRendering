@@ -32,7 +32,6 @@
     <IncludeFfmpeg>true</IncludeFfmpeg>
     <IncludeThirdParty>true</IncludeThirdParty>
     <IncludeSharpSevenZip>false</IncludeSharpSevenZip>
-    <IncludeMonoCecil>true</IncludeMonoCecil>
   </PropertyGroup>
 
   <!-- 导入构建目标 / Import build targets -->
@@ -322,10 +321,6 @@
     <None Update="Info.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Mono.Cecil" Version="0.11.6" />
   </ItemGroup>
 
 </Project>

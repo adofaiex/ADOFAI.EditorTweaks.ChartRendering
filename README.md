@@ -13,4 +13,4 @@ dotnet build ADOFAI.EditorTweaks.ChartRendering.csproj -c Debug
 dotnet build ADOFAI.EditorTweaks.ChartRendering.csproj -c Release
 ```
 
-产物在 `out/` 和 `Build/`，部署目录为 `Mods/ADOFAI.EditorTweaks.ChartRendering/`。发行包包含 Web UI、FFmpeg、Mono.Cecil 及渲染资源。
+产物在 `out/` 和 `Build/`，部署目录为 `Mods/ADOFAI.EditorTweaks.ChartRendering/`。发行包包含 Web UI、FFmpeg 及渲染资源。

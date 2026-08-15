@@ -16,7 +16,6 @@
         <IncludeFfmpeg Condition="'$(IncludeFfmpeg)' == ''">true</IncludeFfmpeg>
         <IncludeThirdParty Condition="'$(IncludeThirdParty)' == ''">true</IncludeThirdParty>
         <IncludeSharpSevenZip Condition="'$(IncludeSharpSevenZip)' == ''">false</IncludeSharpSevenZip>
-        <IncludeMonoCecil Condition="'$(IncludeMonoCecil)' == ''">true</IncludeMonoCecil>
     </PropertyGroup>
 
     <!-- 构建前验证本机游戏依赖；不再复制 DLL 到项目目录 / Validate local game dependencies without copying DLLs -->
@@ -76,7 +75,6 @@
             <ManagedDependencyFiles Include="$(OutputPath)System.Buffers.dll" Condition="'$(IncludeSharpSevenZip)' == 'true'" />
             <ManagedDependencyFiles Include="$(OutputPath)System.Runtime.CompilerServices.Unsafe.dll" Condition="'$(IncludeSharpSevenZip)' == 'true'" />
             <ManagedDependencyFiles Include="$(OutputPath)System.Numerics.Vectors.dll" Condition="'$(IncludeSharpSevenZip)' == 'true' AND Exists('$(OutputPath)System.Numerics.Vectors.dll')" />
-            <ManagedDependencyFiles Include="$(OutputPath)Mono.Cecil.dll" Condition="'$(IncludeMonoCecil)' == 'true'" />
             <SevenZipNativeFile Include="$(OutputPath)x64\7z.dll" Condition="'$(IncludeSharpSevenZip)' == 'true'" />
             <!-- NuGetPackageRoot may not end with a separator (for example with recent .NET SDKs). -->
             <SharpSevenZipLicenseFile Include="$(NuGetPackageRoot)\sharpsevenzip\2.0.109\LICENSE" Condition="'$(IncludeSharpSevenZip)' == 'true'" />
@@ -115,6 +113,7 @@
 
         <RemoveDir Directories="$(ModsDir)Resources" Condition="Exists('$(ModsDir)Resources')" />
         <RemoveDir Directories="$(ModsDir)ThirdParty" Condition="Exists('$(ModsDir)ThirdParty')" />
+        <Delete Files="$(ModsDir)Mono.Cecil.dll" Condition="Exists('$(ModsDir)Mono.Cecil.dll')" />
         <MakeDir Directories="$(ModsDir)" />
         <MakeDir Directories="$(ModsDir)Resources" />
         <MakeDir Directories="$(ModsDir)ThirdParty" />
