@@ -67,7 +67,7 @@ export function createMockState(): WebUiState {
   const names = ["渲染输入保护", "谱面渲染"];
   return {
     server: { connected: false, version: "演示状态" },
-    compatibility: { gameVersion: "1.3.2", editorVersion: "1.3.2", modVersion: "1.0.0" },
+    compatibility: { gameVersion: "1.3.2", editorVersion: "1.3.2", modVersion: "1.0.1" },
     patches: names.map((name, index) => ({
       id: `mock-${index}`,
       name,
