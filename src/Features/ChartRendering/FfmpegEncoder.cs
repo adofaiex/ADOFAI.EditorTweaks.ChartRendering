@@ -77,7 +77,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             string args = "-y -f rawvideo -pixel_format " + inputPixelFormat + " "
                 + "-video_size " + width + "x" + height + " "
                 + "-framerate " + fps + " "
-                + "-i - -an -vf " + Quote(GetVideoFilter()) + " "
+                + "-i - -an -vf " + Quote("scale=out_color_matrix=bt709," + GetVideoFilter()) + " "
                 + GetVideoEncoderArguments() + " "
                 + "-pix_fmt yuv420p "
                 + Quote(tempVideoPath);
