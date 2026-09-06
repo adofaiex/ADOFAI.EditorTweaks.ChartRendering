@@ -16,12 +16,14 @@
         <IncludeFfmpeg Condition="'$(IncludeFfmpeg)' == ''">true</IncludeFfmpeg>
         <IncludeThirdParty Condition="'$(IncludeThirdParty)' == ''">true</IncludeThirdParty>
         <IncludeSharpSevenZip Condition="'$(IncludeSharpSevenZip)' == ''">false</IncludeSharpSevenZip>
+        <RequireGameExecutable Condition="'$(RequireGameExecutable)' == ''">true</RequireGameExecutable>
+        <EnableModDeployment Condition="'$(EnableModDeployment)' == ''">true</EnableModDeployment>
     </PropertyGroup>
 
     <!-- 构建前验证本机游戏依赖；不再复制 DLL 到项目目录 / Validate local game dependencies without copying DLLs -->
     <Target Name="ValidateManagedAssemblies" BeforeTargets="ResolveAssemblyReferences">
         <Error Text="游戏可执行文件不存在：$(GameExePath)。请设置正确的 GameExePath。/ Game executable does not exist: $(GameExePath). Set GameExePath to the installed game executable."
-               Condition="'$(GameExePath)' == '' OR !Exists('$(GameExePath)')" />
+               Condition="'$(RequireGameExecutable)' == 'true' AND ('$(GameExePath)' == '' OR !Exists('$(GameExePath)'))" />
         <Error Text="找不到游戏 Managed 目录：$(ManagedAssembliesDir)。请检查 GameExePath 或使用 /p:ManagedAssembliesDir 指定目录。/ Game Managed directory was not found. Check GameExePath or set ManagedAssembliesDir."
                Condition="!Exists('$(ManagedAssembliesDir)')" />
         <Error Text="游戏 Managed 目录缺少 Assembly-CSharp.dll：$(ManagedAssembliesDir)。/ Assembly-CSharp.dll is missing from the game Managed directory."
@@ -102,7 +104,7 @@
     </Target>
 
     <!-- 部署到游戏目录并启动游戏 / Deploy to game directory and launch game -->
-    <Target Name="DeployAndLaunch" AfterTargets="CopyToOut" Condition="'$(GameExePath)' != '' AND Exists('$(GameExePath)')">
+    <Target Name="DeployAndLaunch" AfterTargets="CopyToOut" Condition="'$(EnableModDeployment)' == 'true' AND '$(GameExePath)' != '' AND Exists('$(GameExePath)')">
         <PropertyGroup>
             <ModsDir>$(GameDir)$(PathSeparator)Mods$(PathSeparator)$(AssemblyName)$(PathSeparator)</ModsDir>
         </PropertyGroup>
