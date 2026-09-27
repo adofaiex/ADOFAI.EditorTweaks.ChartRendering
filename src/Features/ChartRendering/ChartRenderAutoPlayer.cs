@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using HarmonyLib;
 
 namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
@@ -7,6 +8,12 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
     internal static class ChartRenderAutoPlayer
     {
         private const int MaxHitsPerFrame = 16;
+
+        // game-assemblies-2026.09.06.2: Hit(bool isAuto)
+        // game-assemblies-2026.09.27+: Hit(long? hitTick, bool isAuto)
+        private static readonly MethodInfo? HitMethod =
+            AccessTools.Method(typeof(scrPlayer), nameof(scrPlayer.Hit), new[] { typeof(long?), typeof(bool) })
+            ?? AccessTools.Method(typeof(scrPlayer), nameof(scrPlayer.Hit), new[] { typeof(bool) });
 
         public static void CatchUp()
         {
@@ -108,12 +115,26 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     current.holdRenderer.Hit();
                 }
 
-                return player.Hit(isAuto: true);
+                return InvokeHit(player, isAuto: true);
             }
             finally
             {
                 RDC.auto = oldAuto;
             }
+        }
+
+        private static bool InvokeHit(scrPlayer player, bool isAuto)
+        {
+            if (HitMethod == null)
+            {
+                ChartRenderDiagnostics.Log("AUTO_HIT_MISSING scrPlayer.Hit overload was not found.");
+                return false;
+            }
+
+            object?[] args = HitMethod.GetParameters().Length == 2
+                ? new object?[] { null, isAuto }
+                : new object?[] { isAuto };
+            return HitMethod.Invoke(player, args) is true;
         }
     }
 
@@ -126,9 +147,35 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         }
     }
 
-    [HarmonyPatch(typeof(AsyncInputUtils), nameof(AsyncInputUtils.AdjustAngle), typeof(scrPlayer), typeof(ulong))]
+    [HarmonyPatch]
     internal static class ChartRenderAsyncAnglePatch
     {
+        // game-assemblies-2026.09.06.2: AdjustAngle(scrPlayer, ulong)
+        // game-assemblies-2026.09.27+: AdjustAngle(scrPlayer, long)
+        private static MethodBase TargetMethod()
+        {
+            MethodInfo? withLong = AccessTools.Method(
+                typeof(AsyncInputUtils),
+                nameof(AsyncInputUtils.AdjustAngle),
+                new[] { typeof(scrPlayer), typeof(long) });
+            if (withLong != null)
+            {
+                return withLong;
+            }
+
+            MethodInfo? withULong = AccessTools.Method(
+                typeof(AsyncInputUtils),
+                nameof(AsyncInputUtils.AdjustAngle),
+                new[] { typeof(scrPlayer), typeof(ulong) });
+            if (withULong == null)
+            {
+                throw new MissingMethodException(
+                    "AsyncInputUtils.AdjustAngle(scrPlayer, long|ulong) was not found.");
+            }
+
+            return withULong;
+        }
+
         private static bool Prefix()
         {
             if (!ChartRenderSession.IsRendering)
@@ -141,9 +188,32 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         }
     }
 
-    [HarmonyPatch(typeof(scrPlayer), nameof(scrPlayer.Hit))]
+    [HarmonyPatch]
     internal static class ChartRenderHitEndFloorPatch
     {
+        private static MethodBase TargetMethod()
+        {
+            MethodInfo? withHitTick = AccessTools.Method(
+                typeof(scrPlayer),
+                nameof(scrPlayer.Hit),
+                new[] { typeof(long?), typeof(bool) });
+            if (withHitTick != null)
+            {
+                return withHitTick;
+            }
+
+            MethodInfo? legacy = AccessTools.Method(
+                typeof(scrPlayer),
+                nameof(scrPlayer.Hit),
+                new[] { typeof(bool) });
+            if (legacy == null)
+            {
+                throw new MissingMethodException("scrPlayer.Hit(long?, bool) / Hit(bool) was not found.");
+            }
+
+            return legacy;
+        }
+
         private static bool Prefix(scrPlayer __instance, ref bool __result)
         {
             if (!ChartRenderSession.IsRendering || ChartRenderSession.AutoPlaybackEndFloor == int.MaxValue)

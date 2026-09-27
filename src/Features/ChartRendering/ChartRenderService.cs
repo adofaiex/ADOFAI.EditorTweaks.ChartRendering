@@ -52,17 +52,72 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         public static ChartRenderAvailability GetAvailability()
         {
-            if (Main.Mod == null || instance == null)
+            if (Main.Mod == null)
             {
-                return new ChartRenderAvailability(false, ChartRenderErrorCode.ApiUnavailable, "ADOFAI Editor Tweaks rendering service is not enabled.");
+                return new ChartRenderAvailability(
+                    false,
+                    ChartRenderErrorCode.ApiUnavailable,
+                    "ADOFAI Editor Tweaks Chart Rendering mod is not loaded.");
             }
 
+            // Patches are checked before the MonoBehaviour host: when Harmony fails,
+            // Ensure() is skipped so instance is null. Surfacing the patch failure here
+            // avoids the misleading "service is not enabled" toast.
             if (!PatchManager.IsAvailable(PatchFeature.ChartRendering))
             {
-                return new ChartRenderAvailability(false, ChartRenderErrorCode.ApiUnavailable, "Chart Rendering is incompatible with the current game version.");
+                string detail = DescribeChartRenderingPatchProblem();
+                Main.Log("[ChartRender] Availability denied: " + detail);
+                return new ChartRenderAvailability(false, ChartRenderErrorCode.ApiUnavailable, detail);
+            }
+
+            if (instance == null)
+            {
+                const string message = "ADOFAI Editor Tweaks rendering service is not enabled.";
+                Main.Log("[ChartRender] Availability denied: service host instance is null.");
+                return new ChartRenderAvailability(false, ChartRenderErrorCode.ApiUnavailable, message);
             }
 
             return new ChartRenderAvailability(true, ChartRenderErrorCode.None, string.Empty);
+        }
+
+        private static string DescribeChartRenderingPatchProblem()
+        {
+            PatchGroupStatus? status = null;
+            foreach (PatchGroupStatus item in PatchManager.Statuses)
+            {
+                if (item.Feature == PatchFeature.ChartRendering)
+                {
+                    status = item;
+                    break;
+                }
+            }
+
+            if (status == null)
+            {
+                return "Chart rendering patches are not active on the current game version.";
+            }
+
+            if (status.State == PatchGroupState.Failed)
+            {
+                string at = string.IsNullOrEmpty(status.FailedPatchName)
+                    ? string.Empty
+                    : " (at " + status.FailedPatchName + ")";
+                string reason = string.IsNullOrWhiteSpace(status.Reason) ? "unknown error" : status.Reason;
+                return "Chart rendering patches failed to apply" + at + ": " + reason;
+            }
+
+            if (status.State == PatchGroupState.Blocked)
+            {
+                string dependency = status.BlockedBy.HasValue
+                    ? status.BlockedBy.Value.ToString()
+                    : "unknown";
+                string reason = string.IsNullOrWhiteSpace(status.Reason)
+                    ? "required patch group is unavailable"
+                    : status.Reason;
+                return "Chart rendering is blocked by dependency '" + dependency + "': " + reason;
+            }
+
+            return "Chart Rendering is incompatible with the current game version.";
         }
 
         public static ChartRenderRequest CreateRequestFromCurrentSettings()

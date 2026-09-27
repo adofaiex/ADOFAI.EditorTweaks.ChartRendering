@@ -19,6 +19,14 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             foreach (PatchGroupStatus status in statuses)
             {
                 if (status.State == PatchGroupState.Active) activeCount++;
+                string reason = status.Reason;
+                if (status.State == PatchGroupState.Failed && !string.IsNullOrEmpty(status.FailedPatchName))
+                {
+                    reason = string.IsNullOrEmpty(reason)
+                        ? status.FailedPatchName
+                        : status.FailedPatchName + ": " + reason;
+                }
+
                 patches.Add(new Dictionary<string, object>
                 {
                     ["id"] = status.Feature.ToString(),
@@ -26,7 +34,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                     ["description"] = status.Feature == PatchFeature.RenderInputGuard ? "渲染期间屏蔽输入干扰" : "谱面画面、音频和视频背景渲染",
                     ["state"] = GetPatchState(status.State),
                     ["patchCount"] = status.PatchCount,
-                    ["reason"] = status.Reason ?? string.Empty
+                    ["failedPatchName"] = status.FailedPatchName,
+                    ["reason"] = reason
                 });
             }
 

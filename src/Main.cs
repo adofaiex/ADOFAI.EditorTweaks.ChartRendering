@@ -1,5 +1,6 @@
 using System;
 using System.Threading;
+using ADOFAI.EditorTweaks.Api.Rendering;
 using ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering;
 using ADOFAI.EditorTweaks.ChartRendering.Features.WebUi;
 using ADOFAI.EditorTweaks.ChartRendering.Patching;
@@ -44,6 +45,10 @@ namespace ADOFAI.EditorTweaks.ChartRendering
                 else
                 {
                     ChartRenderService.Destroy();
+                    ChartRenderAvailability availability = ChartRenderService.GetAvailability();
+                    modEntry.Logger.Error(
+                        "Chart rendering service was not started because patches are unavailable: "
+                        + availability.Message);
                 }
 
                 WebUiHost.Ensure();
