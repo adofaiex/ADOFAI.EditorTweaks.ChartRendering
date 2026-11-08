@@ -12,6 +12,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private readonly int frameByteLength;
         private readonly int maxPendingGpuFrames;
         private byte[]? lastFrameBytes;
+        private bool lastFrameWritten;
         private int pendingGpuFrames;
 
         public ChartRenderFramePipeline(ChartRenderMemoryBudget budget)
@@ -30,7 +31,12 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         {
             pendingFrames.Clear();
             pendingGpuFrames = 0;
-            lastFrameBytes = null;
+            lock (frameBufferPoolLock)
+            {
+                lastFrameBytes = null;
+                lastFrameWritten = false;
+            }
+
             WrittenFrames = 0;
             DuplicateFrames = 0;
         }
@@ -99,8 +105,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             try
             {
                 pending.Complete(buffer);
-                EnsureLastFrameBuffer();
-                Buffer.BlockCopy(buffer, 0, lastFrameBytes!, 0, pending.ByteLength);
+                KeepAsLastFrame(buffer);
                 encoder.WriteFrame(buffer, pending.ByteLength, pending.RepeatCount, ReturnFrameBuffer, isCancelRequested);
                 buffer = null!;
             }
@@ -141,11 +146,20 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             WrittenFrames++;
         }
 
-        private void EnsureLastFrameBuffer()
+        // The newest captured buffer doubles as the source for repeated frames, instead of copying
+        // every frame (about 32 MB per 4K frame on the main thread) for repeats that charts rarely
+        // need. It only goes back to the pool once the writer is done and a newer frame replaced it.
+        private void KeepAsLastFrame(byte[] buffer)
         {
-            if (lastFrameBytes == null || lastFrameBytes.Length < frameByteLength)
+            lock (frameBufferPoolLock)
             {
-                lastFrameBytes = new byte[frameByteLength];
+                if (lastFrameBytes != null && lastFrameWritten)
+                {
+                    frameBufferPool.Enqueue(lastFrameBytes);
+                }
+
+                lastFrameBytes = buffer;
+                lastFrameWritten = false;
             }
         }
 
@@ -171,6 +185,14 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
             lock (frameBufferPoolLock)
             {
+                // The writer finished with the buffer kept for repeats: mark it, but keep it out of
+                // the pool until KeepAsLastFrame replaces it.
+                if (ReferenceEquals(buffer, lastFrameBytes))
+                {
+                    lastFrameWritten = true;
+                    return;
+                }
+
                 frameBufferPool.Enqueue(buffer);
             }
         }

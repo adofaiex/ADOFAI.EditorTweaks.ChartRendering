@@ -431,7 +431,7 @@ function RenderPage({ state, onSettings, onOpenDocument, onStart, onCancel }: { 
           <SettingNumber label="音频同步偏移" value={state.settings.ChartRenderAudioSyncOffsetMs} min={-5000} max={5000} step={1} onChange={(value) => onSettings({ ChartRenderAudioSyncOffsetMs: value })} suffix="毫秒" disabled={settingsLocked} />
         </div>
         <DisclosureButton label={professionalOpen ? "隐藏专业 FFmpeg 设置" : "显示专业 FFmpeg 设置"} open={professionalOpen} onClick={() => setProfessionalOpen((open) => !open)} disabled={false} />
-        {professionalOpen ? <div className="professional-settings"><div className="settings-note">输入完整的自定义 FFmpeg 合成参数字符串。留空则使用自动生成参数。</div><SettingText label="自定义 FFmpeg 合成参数" value={state.settings.ChartRenderCustomMuxArgs} onChange={(value) => onSettings({ ChartRenderCustomMuxArgs: value })} disabled={settingsLocked} /><Button className="secondary-button" onClick={() => onOpenDocument("/docs/ffmpeg")}>打开 FFmpeg 参数参考帮助</Button></div> : null}
+        {professionalOpen ? <div className="professional-settings"><div className="settings-note">自定义 FFmpeg 程序路径：填写 ffmpeg.exe 的完整路径，留空则使用 Mod 自带的 FFmpeg。路径无效时会自动回退到自带版本。</div><SettingText label="自定义 FFmpeg 路径" value={state.settings.FfmpegCustomPath} onChange={(value) => onSettings({ FfmpegCustomPath: value })} disabled={settingsLocked} /><div className="settings-note">输入完整的自定义 FFmpeg 合成参数字符串。留空则使用自动生成参数。</div><SettingText label="自定义 FFmpeg 合成参数" value={state.settings.ChartRenderCustomMuxArgs} onChange={(value) => onSettings({ ChartRenderCustomMuxArgs: value })} disabled={settingsLocked} /><Button className="secondary-button" onClick={() => onOpenDocument("/docs/ffmpeg")}>打开 FFmpeg 参数参考帮助</Button></div> : null}
       </div> : null}
     </section>
   </>;

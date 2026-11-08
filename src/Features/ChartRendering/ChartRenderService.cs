@@ -469,10 +469,12 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 return false;
             }
 
-            if (!File.Exists(ChartRenderPaths.GetFfmpegPath()))
+            string ffmpegPath = ChartRenderPaths.GetFfmpegPath();
+            if (!File.Exists(ffmpegPath))
             {
                 errorCode = ChartRenderErrorCode.InitializationFailed;
-                error = "The bundled FFmpeg executable is missing.";
+                error = "FFmpeg executable was not found: " + ffmpegPath
+                    + ". Reinstall the mod or set a custom FFmpeg path.";
                 return false;
             }
 

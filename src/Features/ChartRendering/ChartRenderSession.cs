@@ -14,6 +14,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
     internal sealed class ChartRenderSession
     {
         private const double CompletionFallbackSeconds = 30.0;
+        private const float BackgroundCancelTimeoutSeconds = 10f;
 
         private readonly UnityModManager.ModEntry modEntry;
         private readonly ChartRenderConfiguration configuration;
@@ -315,6 +316,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             int renderFrameLimit = progress.TotalFrames + fallbackExtraFrames;
             bool estimateExpandedToFallback = false;
             WriteLog("Render estimate: " + progress.TotalFrames + " frames, fallback limit: " + renderFrameLimit + " frames. " + MemoryBudgetText + "; " + QueueBudgetText);
+            ChartRenderDiagnostics.LogMemory("Start of render");
             DetailText = Path.GetFileName(outputPath);
             yield return null;
 
@@ -509,25 +511,51 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
             thread.Start();
             bool canceled = false;
+            bool abandoned = false;
+            float cancelDeadline = 0f;
             while (!done.IsSet)
             {
                 if (!canceled && IsCancellationRequested)
                 {
+                    // Only kill FFmpeg here; the worker thread still owns the encoder and unwinds on
+                    // its own. Disposing it from this thread could leave the worker waiting forever.
                     canceled = true;
-                    encoder?.Dispose();
+                    cancelDeadline = Time.realtimeSinceStartup + BackgroundCancelTimeoutSeconds;
+                    encoder?.Abort();
                     result.Success = false;
                     result.Message = "Canceled.";
                     result.Canceled = true;
                     result.ErrorCode = ChartRenderErrorCode.Canceled;
+                    WriteLog("Cancel requested during " + StageText + "; FFmpeg aborted.");
+                }
+
+                if (canceled && Time.realtimeSinceStartup >= cancelDeadline)
+                {
+                    // Never leave the game stuck behind an active render task: give up on the worker
+                    // (it is a background thread) and finish the cancel.
+                    abandoned = true;
+                    WriteLog("Background worker did not stop within " + BackgroundCancelTimeoutSeconds
+                        + " seconds after cancel; abandoning it.");
+                    break;
                 }
 
                 yield return null;
             }
 
-            thread.Join();
-            done.Dispose();
+            if (!abandoned)
+            {
+                thread.Join();
+                done.Dispose();
+            }
+
             if (canceled)
             {
+                if (!abandoned)
+                {
+                    encoder?.Dispose();
+                }
+
+                DeletePartialOutput();
                 if (deleteTempOnCancel)
                 {
                     DeleteTempDirectory();
@@ -596,7 +624,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 Directory.CreateDirectory(tempDirectory);
                 tempVideoPath = Path.Combine(tempDirectory, "temp_video.mp4");
                 capturedAudioPath = Path.Combine(tempDirectory, "audio.wav");
-                ChartRenderDiagnostics.Begin(Path.Combine(tempDirectory, "render.log"));
+                ChartRenderDiagnostics.BeginRender(workspace);
                 renderRange = configuration.Range;
                 WriteLog("Capture source locked for this render: " + captureSource + ".");
 
@@ -926,6 +954,26 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
         }
 
+        // A mux that was killed leaves a truncated video at the final export path. The path is
+        // unique to this render (GetUniqueOutputPath), so removing it cannot touch other files.
+        private void DeletePartialOutput()
+        {
+            if (string.IsNullOrEmpty(outputPath) || !File.Exists(outputPath))
+            {
+                return;
+            }
+
+            try
+            {
+                File.Delete(outputPath);
+                WriteLog("Deleted partial output after cancel: " + outputPath);
+            }
+            catch (Exception ex)
+            {
+                WriteLog("Failed to delete partial output " + outputPath + ": " + ex.Message);
+            }
+        }
+
         private void DeleteTempDirectory()
         {
             if (string.IsNullOrEmpty(tempDirectory) || !Directory.Exists(tempDirectory))
@@ -1029,6 +1077,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             catch (Exception ex)
             {
                 Main.Log("Chart render error: " + ex);
+                if (!string.IsNullOrEmpty(ChartRenderDiagnostics.LogPath))
+                {
+                    Main.Log("Chart render log: " + ChartRenderDiagnostics.LogPath);
+                }
+
                 failure = ex;
                 return false;
             }

@@ -87,7 +87,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 ["ChartRenderAudioSyncOffsetMs"] = settings.ChartRenderAudioSyncOffsetMs,
                 ["ChartRenderShowHitJudgments"] = settings.ChartRenderShowHitJudgments,
                 ["ChartRenderUseSelectedRange"] = settings.ChartRenderUseSelectedRange,
-                ["ChartRenderCustomMuxArgs"] = settings.ChartRenderCustomMuxArgs ?? string.Empty
+                ["ChartRenderCustomMuxArgs"] = settings.ChartRenderCustomMuxArgs ?? string.Empty,
+                ["FfmpegCustomPath"] = settings.FfmpegCustomPath ?? string.Empty
             };
         }
 

@@ -29,10 +29,17 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private readonly string audioFormat;
         private readonly string customMuxArgs;
         private readonly float audioSyncOffsetMs;
+        // Guards the process field, which a worker thread swaps (video -> mux -> null) while the
+        // main thread may call Abort to cancel.
+        private readonly object processLock = new object();
+        private volatile bool aborted;
         private Process? process;
         private BlockingCollection<QueuedFrame>? frameQueue;
         private Thread? writerThread;
         private Exception? writerException;
+        // Tail of the video process's stderr, so a failed render can say why FFmpeg stopped.
+        private const int VideoStderrLimit = 4000;
+        private readonly StringBuilder videoStderr = new StringBuilder();
 
         public FfmpegEncoder(
             string ffmpegPath,
@@ -88,7 +95,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 + " bitrate=" + GetTargetBitrateMbps() + "M"
                 + " queueFrames=" + queueCapacityFrames
                 + " args=" + args);
-            process = StartProcess(args, redirectInput: true);
+            process = StartVideoProcess(args);
             frameQueue = new BlockingCollection<QueuedFrame>(boundedCapacity: queueCapacityFrames);
             writerException = null;
             writerThread = new Thread(WriteLoop)
@@ -117,12 +124,12 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
                 if (process == null || process.HasExited)
                 {
-                    throw new InvalidOperationException("FFmpeg video process is not running.");
+                    throw VideoFailure("FFmpeg video process is not running.", null);
                 }
 
                 if (writerException != null)
                 {
-                    throw new InvalidOperationException("FFmpeg writer failed.", writerException);
+                    throw VideoFailure("FFmpeg writer failed.", writerException);
                 }
 
                 if (frameQueue!.TryAdd(queuedFrame, 50))
@@ -134,29 +141,78 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         public void CompleteVideo()
         {
-            if (process == null)
+            Process? video;
+            lock (processLock)
+            {
+                video = process;
+            }
+
+            if (video == null)
             {
                 return;
             }
 
             frameQueue?.CompleteAdding();
             writerThread?.Join();
+            if (aborted)
+            {
+                throw new OperationCanceledException("Canceled.");
+            }
+
             if (writerException != null)
             {
-                throw new InvalidOperationException("FFmpeg writer failed.", writerException);
+                throw VideoFailure("FFmpeg writer failed.", writerException);
             }
 
-            process.WaitForExit();
-            if (process.ExitCode != 0)
+            video.WaitForExit();
+            if (aborted)
             {
-                throw new InvalidOperationException("FFmpeg video encoding failed with exit code " + process.ExitCode + ".");
+                throw new OperationCanceledException("Canceled.");
             }
 
-            process.Dispose();
-            process = null;
+            if (video.ExitCode != 0)
+            {
+                throw VideoFailure("FFmpeg video encoding failed.", null);
+            }
+
+            lock (processLock)
+            {
+                process = null;
+            }
+
+            video.Dispose();
             frameQueue?.Dispose();
             frameQueue = null;
             writerThread = null;
+        }
+
+        // Thread-safe cancellation for the finalize/mux stages: kills the running FFmpeg process so
+        // the worker thread unwinds on its own. It never disposes anything, because disposing a
+        // Process while another thread waits on it can leave that wait hanging under Mono.
+        public void Abort()
+        {
+            Process? current;
+            lock (processLock)
+            {
+                aborted = true;
+                current = process;
+            }
+
+            if (current == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (!current.HasExited)
+                {
+                    current.Kill();
+                }
+            }
+            catch
+            {
+            }
         }
 
         public void MuxAudioFile(string audioPath)
@@ -213,21 +269,27 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         public void Dispose()
         {
-            if (process != null)
+            Process? current;
+            lock (processLock)
+            {
+                current = process;
+                process = null;
+            }
+
+            if (current != null)
             {
                 try
                 {
-                    if (!process.HasExited)
+                    if (!current.HasExited)
                     {
-                        process.Kill();
+                        current.Kill();
                     }
                 }
                 catch
                 {
                 }
 
-                process.Dispose();
-                process = null;
+                current.Dispose();
             }
 
             if (frameQueue != null)
@@ -490,7 +552,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             public Action<byte[]>? Release { get; }
         }
 
-        private Process StartProcess(string arguments, bool redirectInput)
+        private Process StartVideoProcess(string arguments)
         {
             ProcessStartInfo info = new ProcessStartInfo
             {
@@ -498,8 +560,14 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 Arguments = "-hide_banner -loglevel warning " + arguments,
                 UseShellExecute = false,
                 CreateNoWindow = true,
-                RedirectStandardInput = redirectInput
+                RedirectStandardInput = true,
+                RedirectStandardError = true
             };
+
+            lock (videoStderr)
+            {
+                videoStderr.Clear();
+            }
 
             Process? started = Process.Start(info);
             if (started == null)
@@ -507,7 +575,60 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 throw new InvalidOperationException("Failed to start FFmpeg.");
             }
 
+            started.ErrorDataReceived += (_, e) =>
+            {
+                if (e.Data == null)
+                {
+                    return;
+                }
+
+                lock (videoStderr)
+                {
+                    videoStderr.AppendLine(e.Data);
+                    if (videoStderr.Length > VideoStderrLimit)
+                    {
+                        videoStderr.Remove(0, videoStderr.Length - VideoStderrLimit);
+                    }
+                }
+            };
+            started.BeginErrorReadLine();
             return started;
+        }
+
+        // Builds the error for a failed video encode with FFmpeg's exit code and stderr, and
+        // writes the same detail to the render log.
+        private Exception VideoFailure(string message, Exception? inner)
+        {
+            Process? video;
+            lock (processLock)
+            {
+                video = process;
+            }
+
+            string exitCode = string.Empty;
+            try
+            {
+                if (video != null && video.HasExited)
+                {
+                    video.WaitForExit(500);
+                    exitCode = " Exit code " + video.ExitCode + ".";
+                }
+            }
+            catch
+            {
+            }
+
+            string stderr;
+            lock (videoStderr)
+            {
+                stderr = videoStderr.ToString();
+            }
+
+            string detail = BuildProcessFailureDetail(string.Empty, stderr);
+            ChartRenderDiagnostics.Log(message + exitCode + detail);
+            return inner == null
+                ? new InvalidOperationException(message + exitCode + detail)
+                : new InvalidOperationException(message + exitCode + detail, inner);
         }
 
         private void RunMuxProcess(string arguments)
@@ -526,13 +647,36 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             StringBuilder stdout = new StringBuilder();
             ChartRenderDiagnostics.Log("FFmpeg mux args: " + arguments);
 
+            if (aborted)
+            {
+                throw new OperationCanceledException("Canceled.");
+            }
+
             Process? mux = Process.Start(info);
             if (mux == null)
             {
                 throw new InvalidOperationException("Failed to start FFmpeg.");
             }
 
-            process = mux;
+            bool abortedBeforeTracking;
+            lock (processLock)
+            {
+                process = mux;
+                abortedBeforeTracking = aborted;
+            }
+
+            // Abort ran between the check above and tracking the process, so it could not kill it.
+            if (abortedBeforeTracking)
+            {
+                try
+                {
+                    mux.Kill();
+                }
+                catch
+                {
+                }
+            }
+
             try
             {
                 using (mux)
@@ -554,6 +698,10 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     mux.BeginErrorReadLine();
                     mux.BeginOutputReadLine();
                     mux.WaitForExit();
+                    if (aborted)
+                    {
+                        throw new OperationCanceledException("Canceled.");
+                    }
 
                     if (mux.ExitCode != 0)
                     {
@@ -565,7 +713,10 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
             finally
             {
-                process = null;
+                lock (processLock)
+                {
+                    process = null;
+                }
             }
         }
 

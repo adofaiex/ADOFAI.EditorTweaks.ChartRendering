@@ -62,6 +62,7 @@ export function createMockState(): WebUiState {
     ChartRenderShowHitJudgments: true,
     ChartRenderUseSelectedRange: false,
     ChartRenderCustomMuxArgs: "",
+    FfmpegCustomPath: "",
   };
 
   const names = ["渲染输入保护", "谱面渲染"];

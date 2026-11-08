@@ -17,6 +17,57 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private static int floorJumps;
         private static int suppressedAsyncAdjusts;
 
+        private const int KeptRenderLogs = 10;
+
+        public static string LogPath => logPath;
+
+        public static string LogDirectory(string workspace) => Path.Combine(workspace, "Logs");
+
+        // Each render logs to its own file under Workspace\Logs. The CurrentRender temp directory is
+        // deleted after every render (success, failure or cancel), so a log kept there was always gone
+        // by the time anyone looked for it. Old logs are pruned so at most KeptRenderLogs remain,
+        // counting the new one.
+        public static void BeginRender(string workspace)
+        {
+            string directory = LogDirectory(workspace);
+            Directory.CreateDirectory(directory);
+            PruneRenderLogs(directory);
+            Begin(Path.Combine(directory, "render_" + DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture) + ".log"));
+        }
+
+        private static void PruneRenderLogs(string directory)
+        {
+            try
+            {
+                FileInfo[] logs = new DirectoryInfo(directory).GetFiles("render_*.log");
+                Array.Sort(logs, (a, b) => b.LastWriteTimeUtc.CompareTo(a.LastWriteTimeUtc));
+                for (int i = KeptRenderLogs - 1; i < logs.Length; i++)
+                {
+                    logs[i].Delete();
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        // Compared between renders to tell whether memory grows with every render.
+        public static void LogMemory(string stage)
+        {
+            try
+            {
+                using (System.Diagnostics.Process process = System.Diagnostics.Process.GetCurrentProcess())
+                {
+                    Log(stage + " memory: workingSet=" + process.WorkingSet64 / (1024L * 1024L) + " MiB"
+                        + " unityAllocated=" + UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong() / (1024L * 1024L) + " MiB"
+                        + " managed=" + GC.GetTotalMemory(false) / (1024L * 1024L) + " MiB.");
+                }
+            }
+            catch
+            {
+            }
+        }
+
         public static void Begin(string path)
         {
             lock (Sync)
@@ -42,6 +93,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 return;
             }
 
+            LogMemory("End of render");
             Log("Diagnostics ended. autoHits=" + autoHits + " failedAutoHits=" + failedAutoHits + " floorJumps=" + floorJumps + " suppressedAsyncAdjusts=" + suppressedAsyncAdjusts);
             active = false;
         }

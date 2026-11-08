@@ -15,6 +15,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering
         private const int MaxFps = 240;
 
         public string WebUiOpenHotkey = WebUiHotkey.Default;
+        // Optional ffmpeg.exe to use instead of the bundled one. Empty = bundled.
+        public string FfmpegCustomPath = string.Empty;
         public string ChartRenderWorkspaceDirectory = string.Empty;
         public string ChartRenderExportDirectory = string.Empty;
         public int ChartRenderWidth = 1920;
@@ -81,11 +83,13 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             ChartRenderWorkspaceDirectory = ChartRenderWorkspaceDirectory ?? string.Empty;
             ChartRenderExportDirectory = ChartRenderExportDirectory ?? string.Empty;
             ChartRenderCustomMuxArgs = ChartRenderCustomMuxArgs ?? string.Empty;
+            FfmpegCustomPath = (FfmpegCustomPath ?? string.Empty).Trim().Trim('"');
         }
 
         public void ResetAllDefaults(UnityModManager.ModEntry modEntry)
         {
             WebUiOpenHotkey = WebUiHotkey.Default;
+            FfmpegCustomPath = string.Empty;
             ChartRenderWorkspaceDirectory = Path.Combine(modEntry.Path, "Workspace");
             ChartRenderExportDirectory = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "ADOFAI Renders");

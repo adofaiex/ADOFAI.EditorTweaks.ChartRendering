@@ -22,6 +22,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         public bool PlaybackStartsAtBeginning { get; private set; }
 
+        // True only while RestoreState drives scnEditor.SwitchToEditMode. That call pauses the
+        // controller through scnGame.ResetScene -> scrController.TogglePauseGame, which the render
+        // input guard would otherwise block because the render task is still active.
+        internal static bool IsRestoringEditMode { get; private set; }
+
         public void StartPlayback(ChartRenderRange renderRange, ChartRenderPlaybackMode playbackMode)
         {
             savedState = RenderState.Capture();
@@ -69,12 +74,20 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 scnEditor editor = ADOBase.editor;
                 if (ownsPlayback && editor != null && (editor.playMode || !editor.inStrictlyEditingMode))
                 {
+                    IsRestoringEditMode = true;
                     editor.SwitchToEditMode();
+                    ChartRenderDiagnostics.Log("Switched editor back to edit mode. playMode=" + editor.playMode
+                        + " paused=" + (ADOBase.controller != null && ADOBase.controller.paused) + ".");
                 }
             }
             catch (Exception ex)
             {
                 Main.Log("Failed to switch back to edit mode: " + ex.Message);
+                ChartRenderDiagnostics.Log("Failed to switch back to edit mode: " + ex);
+            }
+            finally
+            {
+                IsRestoringEditMode = false;
             }
 
             savedState.Restore();

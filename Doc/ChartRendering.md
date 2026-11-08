@@ -31,7 +31,7 @@
 | `ChartRenderAutoPlayer.cs` | 渲染期间自动补打砖块，并 suppress 异步输入角度修正。 |
 | `ChartRenderAudioPatches.cs` | 屏蔽界面音效进入成品音频。 |
 | `ChartRenderJudgmentPatches.cs` | 根据设置隐藏或显示判定文字。 |
-| `ChartRenderDiagnostics.cs` | 写 `render.log`，记录球抽搐、跳块、失败、FFmpeg 等诊断信息。 |
+| `ChartRenderDiagnostics.cs` | 每次渲染写一份 `Workspace\Logs\render_时间.log`（保留最近 10 份），记录渲染前后内存占用，以及球抽搐、跳块、失败、FFmpeg 等诊断信息。 |
 | `ChartRenderPaths.cs` | FFmpeg 路径、工作区路径、导出路径、文件名清理。 |
 | `ChartRenderResult.cs` | 渲染结果 DTO。 |
 
@@ -75,7 +75,7 @@ Web 设置页只负责从当前用户设置创建请求，不直接持有 `Chart
    - 创建 workspace 和 export 目录。
    - 清空并重建 `CurrentRender`。
    - 设置 `temp_video.mp4`、`audio.wav`、最终输出路径。
-   - 开启 `ChartRenderDiagnostics.Begin(render.log)`。
+   - 开启 `ChartRenderDiagnostics.BeginRender(workspace)`，日志写入 `Workspace\Logs\`，不随 `CurrentRender` 删除。
    - 根据设置解析渲染范围：整首谱面，或编辑器当前选中的连续砖块段落。
 3. `TryStartPlayback()`：
    - `ChartRenderPlaybackController` 保存旧状态。
@@ -239,7 +239,7 @@ Patch 点：
 - 片段渲染时，Patch `scrPlayer.Hit` 阻止任何命中越过选中段落终点。
 - Patch `AsyncInputUtils.AdjustAngle(scrPlayer, ulong)`：渲染时直接跳过，并记录 suppressed 次数。
 
-如果球又抽搐，优先看 `render.log`：
+如果球又抽搐，优先看 `Workspace\Logs\` 里最新的 `render_*.log`：
 
 - `AUTO_HIT ... FLOOR_JUMP`
 - `AUTO_HIT_GUARD_REACHED`

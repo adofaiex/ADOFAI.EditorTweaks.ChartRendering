@@ -594,6 +594,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                     case "ChartRenderShowHitJudgments": settings.ChartRenderShowHitJudgments = GetBool(change.Value, settings.ChartRenderShowHitJudgments); break;
                     case "ChartRenderUseSelectedRange": settings.ChartRenderUseSelectedRange = GetBool(change.Value, settings.ChartRenderUseSelectedRange); break;
                     case "ChartRenderCustomMuxArgs": settings.ChartRenderCustomMuxArgs = GetString(change.Value, settings.ChartRenderCustomMuxArgs); break;
+                    case "FfmpegCustomPath": settings.FfmpegCustomPath = GetString(change.Value, settings.FfmpegCustomPath); break;
                 }
             }
 
