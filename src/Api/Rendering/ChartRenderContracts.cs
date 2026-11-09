@@ -32,6 +32,15 @@ namespace ADOFAI.EditorTweaks.Api.Rendering
         Mov = 2
     }
 
+    // Added after API v1 shipped; requests that do not set it keep encoding H.264.
+    public enum ChartRenderVideoCodec
+    {
+        H264 = 0,
+        Hevc = 1,
+        Av1 = 2,
+        ProRes = 3
+    }
+
     public enum ChartRenderAudioFormat
     {
         Aac = 0,
@@ -155,6 +164,9 @@ namespace ADOFAI.EditorTweaks.Api.Rendering
 
         public ChartRenderVideoFormat VideoFormat { get; set; } = ChartRenderVideoFormat.Mp4;
 
+        // ProRes always produces a .mov file, whatever VideoFormat says.
+        public ChartRenderVideoCodec VideoCodec { get; set; } = ChartRenderVideoCodec.H264;
+
         public ChartRenderAudioFormat AudioFormat { get; set; } = ChartRenderAudioFormat.Aac;
 
         public ChartRenderEncoderMode EncoderMode { get; set; } = ChartRenderEncoderMode.AutoBalanced;
@@ -193,6 +205,7 @@ namespace ADOFAI.EditorTweaks.Api.Rendering
                 OutputDirectory = OutputDirectory ?? string.Empty,
                 OutputFileName = OutputFileName ?? string.Empty,
                 VideoFormat = VideoFormat,
+                VideoCodec = VideoCodec,
                 AudioFormat = AudioFormat,
                 EncoderMode = EncoderMode,
                 ReadbackFormat = ReadbackFormat,

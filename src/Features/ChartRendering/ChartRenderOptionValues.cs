@@ -1,3 +1,5 @@
+using ADOFAI.EditorTweaks.Api.Rendering;
+
 namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 {
     internal static class ChartRenderOptionValues
@@ -18,6 +20,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         public const string VideoFormatMp4 = "mp4";
         public const string VideoFormatMkv = "mkv";
         public const string VideoFormatMov = "mov";
+
+        public const string VideoCodecH264 = "h264";
+        public const string VideoCodecHevc = "hevc";
+        public const string VideoCodecAv1 = "av1";
+        public const string VideoCodecProRes = "prores";
 
         public const string AudioFormatAac = "aac";
         public const string AudioFormatFlac = "flac";
@@ -61,6 +68,14 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             VideoFormatMp4,
             VideoFormatMkv,
             VideoFormatMov
+        };
+
+        public static readonly string[] VideoCodecs =
+        {
+            VideoCodecH264,
+            VideoCodecHevc,
+            VideoCodecAv1,
+            VideoCodecProRes
         };
 
         public static readonly string[] PreviewModes =
@@ -145,6 +160,63 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         public static string GetVideoFormatExtension(string format)
         {
             return "." + NormalizeVideoFormat(format);
+        }
+
+        // ProRes is only written to .mov; every other codec follows the chosen container.
+        public static string GetOutputExtension(string format, string codec)
+        {
+            return NormalizeVideoCodec(codec) == VideoCodecProRes
+                ? "." + VideoFormatMov
+                : GetVideoFormatExtension(format);
+        }
+
+        public static string NormalizeVideoCodec(string? value)
+        {
+            switch ((value ?? string.Empty).Trim().ToLowerInvariant())
+            {
+                case VideoCodecHevc:
+                case "h265":
+                case "x265":
+                    return VideoCodecHevc;
+                case VideoCodecAv1:
+                    return VideoCodecAv1;
+                case VideoCodecProRes:
+                case "prores422":
+                case "prores_ks":
+                    return VideoCodecProRes;
+                default:
+                    return VideoCodecH264;
+            }
+        }
+
+        public static ChartRenderVideoCodec ParseVideoCodec(string? value)
+        {
+            switch (NormalizeVideoCodec(value))
+            {
+                case VideoCodecHevc:
+                    return ChartRenderVideoCodec.Hevc;
+                case VideoCodecAv1:
+                    return ChartRenderVideoCodec.Av1;
+                case VideoCodecProRes:
+                    return ChartRenderVideoCodec.ProRes;
+                default:
+                    return ChartRenderVideoCodec.H264;
+            }
+        }
+
+        public static string FormatVideoCodec(ChartRenderVideoCodec codec)
+        {
+            switch (codec)
+            {
+                case ChartRenderVideoCodec.Hevc:
+                    return VideoCodecHevc;
+                case ChartRenderVideoCodec.Av1:
+                    return VideoCodecAv1;
+                case ChartRenderVideoCodec.ProRes:
+                    return VideoCodecProRes;
+                default:
+                    return VideoCodecH264;
+            }
         }
     }
 }

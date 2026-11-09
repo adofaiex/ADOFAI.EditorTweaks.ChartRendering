@@ -273,7 +273,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     budget.MaxEncoderQueueFrames,
                     settings.ChartRenderAudioSyncOffsetMs,
                     settings.ChartRenderAudioFormat,
-                    settings.ChartRenderCustomMuxArgs);
+                    settings.ChartRenderCustomMuxArgs,
+                    settings.ChartRenderVideoCodec);
                 encoder.BeginVideo();
                 EncoderName = encoder.EncoderName;
                 BeginForcedVisualClock();
@@ -622,13 +623,15 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 }
 
                 Directory.CreateDirectory(tempDirectory);
-                tempVideoPath = Path.Combine(tempDirectory, "temp_video.mp4");
+                // MP4 cannot hold ProRes, so the intermediate video uses MOV for it.
+                bool proRes = ChartRenderOptionValues.NormalizeVideoCodec(settings.ChartRenderVideoCodec) == ChartRenderOptionValues.VideoCodecProRes;
+                tempVideoPath = Path.Combine(tempDirectory, proRes ? "temp_video.mov" : "temp_video.mp4");
                 capturedAudioPath = Path.Combine(tempDirectory, "audio.wav");
                 ChartRenderDiagnostics.BeginRender(workspace);
                 renderRange = configuration.Range;
                 WriteLog("Capture source locked for this render: " + captureSource + ".");
 
-                string extension = ChartRenderOptionValues.GetVideoFormatExtension(settings.ChartRenderVideoFormat);
+                string extension = ChartRenderOptionValues.GetOutputExtension(settings.ChartRenderVideoFormat, settings.ChartRenderVideoCodec);
                 string requestedName = configuration.OutputFileName;
                 string baseName = string.IsNullOrWhiteSpace(requestedName)
                     ? ChartRenderPaths.MakeSafeFileName(GetLevelName())

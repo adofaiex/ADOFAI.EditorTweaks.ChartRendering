@@ -12,6 +12,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
     {
         private static readonly object EncoderProbeLock = new object();
         private static bool? nvencAvailable;
+        private static bool? hevcNvencAvailable;
+        private static bool? av1NvencAvailable;
+        private static bool? svtAv1Available;
+        private static bool? aomAv1Available;
+        private static string probedFfmpegPath = string.Empty;
 
         private readonly string ffmpegPath;
         private readonly string tempVideoPath;
@@ -29,6 +34,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private readonly string audioFormat;
         private readonly string customMuxArgs;
         private readonly float audioSyncOffsetMs;
+        private readonly string videoCodec;
+        // The codec the video process actually encodes: the custom encoder mode always uses H.264.
+        private string effectiveVideoCodec = ChartRenderOptionValues.VideoCodecH264;
         // Guards the process field, which a worker thread swaps (video -> mux -> null) while the
         // main thread may call Abort to cancel.
         private readonly object processLock = new object();
@@ -58,7 +66,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             int queueCapacityFrames,
             float audioSyncOffsetMs,
             string audioFormat,
-            string customMuxArgs)
+            string customMuxArgs,
+            string videoCodec = ChartRenderOptionValues.VideoCodecH264)
         {
             this.ffmpegPath = ffmpegPath;
             this.tempVideoPath = tempVideoPath;
@@ -76,24 +85,29 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             this.audioSyncOffsetMs = audioSyncOffsetMs;
             this.audioFormat = ChartRenderOptionValues.NormalizeAudioFormat(audioFormat);
             this.customMuxArgs = (customMuxArgs ?? string.Empty).Trim();
+            this.videoCodec = ChartRenderOptionValues.NormalizeVideoCodec(videoCodec);
         }
 
         public string EncoderName { get; private set; } = "unknown";
 
         public void BeginVideo()
         {
+            // Built first: it decides effectiveVideoCodec, which the pixel format depends on.
+            string encoderArgs = GetVideoEncoderArguments();
+            string pixelFormat = effectiveVideoCodec == ChartRenderOptionValues.VideoCodecProRes ? "yuv422p10le" : "yuv420p";
             string args = "-y -f rawvideo -pixel_format " + inputPixelFormat + " "
                 + "-video_size " + width + "x" + height + " "
                 + "-framerate " + fps + " "
                 + "-i - -an -vf " + Quote("scale=out_color_matrix=bt709," + GetVideoFilter()) + " "
-                + GetVideoEncoderArguments() + " "
-                + "-pix_fmt yuv420p "
+                + encoderArgs + " "
+                + "-pix_fmt " + pixelFormat + " "
                 + Quote(tempVideoPath);
 
             ChartRenderDiagnostics.Log("FFmpeg video args: mode=" + encoderMode
+                + " codec=" + effectiveVideoCodec
                 + " input=" + inputPixelFormat
                 + " verticalFlip=" + flipVertically
-                + " bitrate=" + GetTargetBitrateMbps() + "M"
+                + " rate=" + (UsesConstantQuality() ? "crf " + ClampCrf() : GetTargetBitrateMbps() + "M")
                 + " queueFrames=" + queueCapacityFrames
                 + " args=" + args);
             process = StartVideoProcess(args);
@@ -236,7 +250,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             string baseInputs = "-y -i " + Quote(tempVideoPath) + " -i " + Quote(audioPath) + " ";
             string outputArgs = (!string.IsNullOrWhiteSpace(customMuxArgs)
                     ? customMuxArgs + " "
-                    : "-c:v copy " + GetAudioCodecArguments() + " -movflags +faststart ")
+                    : "-c:v copy " + GetVideoTagArguments() + GetAudioCodecArguments() + " -movflags +faststart ")
                 + Quote(finalVideoPath);
 
             if (Math.Abs(audioSyncOffsetMs) < 0.001f)
@@ -266,6 +280,18 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
 
             return baseInputs + "-filter_complex " + Quote(filter) + " -map 0:v:0 -map " + Quote("[a]") + " " + outputArgs;
+        }
+
+        // HEVC in MP4/MOV defaults to the hev1 tag, which QuickTime and Apple devices refuse to play.
+        private string GetVideoTagArguments()
+        {
+            if (effectiveVideoCodec != ChartRenderOptionValues.VideoCodecHevc)
+            {
+                return string.Empty;
+            }
+
+            string extension = Path.GetExtension(finalVideoPath).ToLowerInvariant();
+            return extension == ".mp4" || extension == ".mov" ? "-tag:v hvc1 " : string.Empty;
         }
 
         public void Dispose()
@@ -371,37 +397,122 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         {
             if (encoderMode == ChartRenderOptionValues.EncoderCustom)
             {
+                // The custom mode predates codec selection and always encodes H.264.
+                effectiveVideoCodec = ChartRenderOptionValues.VideoCodecH264;
                 return GetCustomVideoEncoderArguments();
             }
 
-            if (!ForcesCpuEncoder() && IsNvencAvailable())
+            effectiveVideoCodec = videoCodec;
+            switch (videoCodec)
+            {
+                case ChartRenderOptionValues.VideoCodecHevc:
+                    return GetHevcEncoderArguments();
+                case ChartRenderOptionValues.VideoCodecAv1:
+                    return GetAv1EncoderArguments();
+                case ChartRenderOptionValues.VideoCodecProRes:
+                    return GetProResEncoderArguments();
+                default:
+                    return GetH264EncoderArguments();
+            }
+        }
+
+        private string GetH264EncoderArguments()
+        {
+            if (!ForcesCpuEncoder() && IsEncoderAvailable(ref nvencAvailable, "h264_nvenc"))
             {
                 string nvencPreset = GetNvencPreset();
-                string tune = encoderMode == ChartRenderOptionValues.EncoderFastest ? "ll" : "hq";
                 EncoderName = "h264_nvenc " + nvencPreset;
                 Main.Log("Chart renderer using h264_nvenc preset " + nvencPreset + ".");
-                return "-c:v h264_nvenc -preset " + nvencPreset + " -tune " + tune + " " + GetNvencBitrateArguments() + " -g " + Math.Max(1, fps * 2);
+                return "-c:v h264_nvenc -preset " + nvencPreset + " -tune " + GetNvencTune() + " " + GetNvencBitrateArguments() + " -g " + GetGopSize();
             }
 
             string x264Preset = GetX264Preset();
             EncoderName = "libx264 " + x264Preset;
             Main.Log("Chart renderer using libx264 preset " + x264Preset + ".");
-            return "-c:v libx264 -preset " + Quote(x264Preset) + " " + GetX264BitrateArguments() + " -g " + Math.Max(1, fps * 2);
+            return "-c:v libx264 -preset " + Quote(x264Preset) + " " + GetX264BitrateArguments() + " -g " + GetGopSize();
+        }
+
+        private string GetHevcEncoderArguments()
+        {
+            if (!ForcesCpuEncoder() && IsEncoderAvailable(ref hevcNvencAvailable, "hevc_nvenc"))
+            {
+                string nvencPreset = GetNvencPreset();
+                EncoderName = "hevc_nvenc " + nvencPreset;
+                Main.Log("Chart renderer using hevc_nvenc preset " + nvencPreset + ".");
+                return "-c:v hevc_nvenc -preset " + nvencPreset + " -tune " + GetNvencTune() + " " + GetNvencBitrateArguments() + " -g " + GetGopSize();
+            }
+
+            // libx265 accepts the same preset names as libx264.
+            string x265Preset = GetX264Preset();
+            EncoderName = "libx265 " + x265Preset;
+            Main.Log("Chart renderer using libx265 preset " + x265Preset + ".");
+            return "-c:v libx265 -preset " + Quote(x265Preset) + " " + GetX264BitrateArguments() + " -g " + GetGopSize();
+        }
+
+        // AV1 NVENC needs an RTX 40 series or newer. The bundled FFmpeg (gyan.dev essentials) has no
+        // libsvtav1, so libaom-av1 is the CPU fallback there; libsvtav1 is used when a custom FFmpeg
+        // provides it, since it is much faster.
+        private string GetAv1EncoderArguments()
+        {
+            if (!ForcesCpuEncoder() && IsEncoderAvailable(ref av1NvencAvailable, "av1_nvenc"))
+            {
+                string nvencPreset = GetNvencPreset();
+                EncoderName = "av1_nvenc " + nvencPreset;
+                Main.Log("Chart renderer using av1_nvenc preset " + nvencPreset + ".");
+                return "-c:v av1_nvenc -preset " + nvencPreset + " -tune " + GetNvencTune() + " " + GetNvencBitrateArguments(av1: true) + " -g " + GetGopSize();
+            }
+
+            if (IsEncoderAvailable(ref svtAv1Available, "libsvtav1"))
+            {
+                EncoderName = "libsvtav1 preset 8";
+                Main.Log("Chart renderer using libsvtav1 preset 8.");
+                // SVT-AV1 rejects CRF 0.
+                string rate = UsesConstantQuality() ? "-crf " + Math.Max(1, ClampCrf()) : "-b:v " + GetTargetBitrateMbps() + "M";
+                return "-c:v libsvtav1 -preset 8 " + rate + " -g " + GetGopSize();
+            }
+
+            if (IsEncoderAvailable(ref aomAv1Available, "libaom-av1"))
+            {
+                EncoderName = "libaom-av1 realtime";
+                Main.Log("Chart renderer using libaom-av1 (realtime, cpu-used 8). AV1 on the CPU is slow.");
+                string rate = UsesConstantQuality() ? "-crf " + ClampCrf() + " -b:v 0" : "-b:v " + GetTargetBitrateMbps() + "M";
+                return "-c:v libaom-av1 -usage realtime -cpu-used 8 -row-mt 1 -tiles 2x2 " + rate + " -g " + GetGopSize();
+            }
+
+            throw new InvalidOperationException("No AV1 encoder is available: av1_nvenc needs an NVIDIA RTX 40 series or newer GPU, "
+                + "and this FFmpeg has neither libsvtav1 nor libaom-av1. Choose another video codec.");
+        }
+
+        private string GetProResEncoderArguments()
+        {
+            EncoderName = "prores_ks (Apple ProRes 422 HQ)";
+            Main.Log("Chart renderer using prores_ks HQ.");
+            return "-c:v prores_ks -profile:v 3 -vendor apl0 -bits_per_mb 8000";
         }
 
         private string GetCustomVideoEncoderArguments()
         {
-            if (!ForcesCustomCpuEncoder() && IsNvencAvailable())
+            if (!ForcesCustomCpuEncoder() && IsEncoderAvailable(ref nvencAvailable, "h264_nvenc"))
             {
                 EncoderName = "h264_nvenc p1";
                 Main.Log("Chart renderer using custom compatibility h264_nvenc.");
-                return "-c:v h264_nvenc -preset p1 -tune ll " + GetNvencBitrateArguments() + " -g " + Math.Max(1, fps * 2);
+                return "-c:v h264_nvenc -preset p1 -tune ll " + GetNvencBitrateArguments() + " -g " + GetGopSize();
             }
 
             string x264Preset = GetRealtimePreset();
             EncoderName = "libx264 " + x264Preset;
             Main.Log("Chart renderer using custom libx264 preset " + x264Preset + ".");
-            return "-c:v libx264 -preset " + Quote(x264Preset) + " " + GetX264BitrateArguments() + " -g " + Math.Max(1, fps * 2);
+            return "-c:v libx264 -preset " + Quote(x264Preset) + " " + GetX264BitrateArguments() + " -g " + GetGopSize();
+        }
+
+        private string GetNvencTune()
+        {
+            return encoderMode == ChartRenderOptionValues.EncoderFastest ? "ll" : "hq";
+        }
+
+        private int GetGopSize()
+        {
+            return Math.Max(1, fps * 2);
         }
 
         private bool ForcesCpuEncoder()
@@ -456,8 +567,24 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             return ChartRenderBitratePresets.ResolveTargetBitrateMbps(configuredBitrateMbps, width, height, fps);
         }
 
-        private string GetNvencBitrateArguments()
+        // With the bitrate setting at Auto, CRF alone controls quality and no bitrate cap applies, so a
+        // lower CRF really gives a sharper (and larger) video. A render request can still set a bitrate.
+        private bool UsesConstantQuality()
         {
+            return configuredBitrateMbps <= ChartRenderBitratePresets.AutoBitrateMbps;
+        }
+
+        private string GetNvencBitrateArguments(bool av1 = false)
+        {
+            if (UsesConstantQuality())
+            {
+                // VBR with -cq still stops at the codec level's bitrate ceiling (about 120 Mbps for
+                // 4K120 H.264), so low CRF values all looked the same. Constant QP has no ceiling.
+                // AV1 NVENC uses a 0-255 QP scale.
+                int qp = av1 ? ClampCrf() * 5 : ClampCrf();
+                return "-rc constqp -qp " + qp;
+            }
+
             int target = GetTargetBitrateMbps();
             int maxRate = ChartRenderBitratePresets.GetMaxRateMbps(target);
             int buffer = ChartRenderBitratePresets.GetBufferSizeMbps(target);
@@ -469,6 +596,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         private string GetX264BitrateArguments()
         {
+            if (UsesConstantQuality())
+            {
+                return "-crf " + ClampCrf();
+            }
+
             int target = GetTargetBitrateMbps();
             int maxRate = ChartRenderBitratePresets.GetMaxRateMbps(target);
             int buffer = ChartRenderBitratePresets.GetBufferSizeMbps(target);
@@ -477,17 +609,28 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 + " -bufsize " + buffer + "M";
         }
 
-        private bool IsNvencAvailable()
+        // Probe results are cached per FFmpeg executable: a custom FFmpeg can support other encoders.
+        private bool IsEncoderAvailable(ref bool? cached, string encoder)
         {
             lock (EncoderProbeLock)
             {
-                if (nvencAvailable.HasValue)
+                if (!string.Equals(probedFfmpegPath, ffmpegPath, StringComparison.OrdinalIgnoreCase))
                 {
-                    return nvencAvailable.Value;
+                    probedFfmpegPath = ffmpegPath;
+                    nvencAvailable = null;
+                    hevcNvencAvailable = null;
+                    av1NvencAvailable = null;
+                    svtAv1Available = null;
+                    aomAv1Available = null;
                 }
 
-                nvencAvailable = ProbeEncoder("h264_nvenc");
-                return nvencAvailable.Value;
+                if (!cached.HasValue)
+                {
+                    cached = ProbeEncoder(encoder);
+                    ChartRenderDiagnostics.Log("Encoder probe " + encoder + ": " + (cached.Value ? "available" : "unavailable") + ".");
+                }
+
+                return cached.Value;
             }
         }
 

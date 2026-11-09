@@ -31,6 +31,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering
         public string ChartRenderPreviewMode = ChartRenderOptionValues.PreviewFull;
         public string ChartRenderAudioFormat = ChartRenderOptionValues.AudioFormatAac;
         public string ChartRenderVideoFormat = ChartRenderOptionValues.VideoFormatMp4;
+        public string ChartRenderVideoCodec = ChartRenderOptionValues.VideoCodecH264;
         public float ChartRenderCompletionTailSeconds = 5f;
         public float ChartRenderAudioSyncOffsetMs;
         public bool ChartRenderShowHitJudgments = true;
@@ -78,6 +79,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             ChartRenderPreviewMode = ChartRenderOptionValues.NormalizePreviewMode(ChartRenderPreviewMode);
             ChartRenderAudioFormat = ChartRenderOptionValues.NormalizeAudioFormat(ChartRenderAudioFormat);
             ChartRenderVideoFormat = ChartRenderOptionValues.NormalizeVideoFormat(ChartRenderVideoFormat);
+            ChartRenderVideoCodec = ChartRenderOptionValues.NormalizeVideoCodec(ChartRenderVideoCodec);
             ChartRenderCompletionTailSeconds = Mathf.Max(0f, ChartRenderCompletionTailSeconds);
             ChartRenderAudioSyncOffsetMs = Mathf.Clamp(ChartRenderAudioSyncOffsetMs, -5000f, 5000f);
             ChartRenderWorkspaceDirectory = ChartRenderWorkspaceDirectory ?? string.Empty;
@@ -105,6 +107,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             ChartRenderPreviewMode = ChartRenderOptionValues.PreviewFull;
             ChartRenderAudioFormat = ChartRenderOptionValues.AudioFormatAac;
             ChartRenderVideoFormat = ChartRenderOptionValues.VideoFormatMp4;
+            ChartRenderVideoCodec = ChartRenderOptionValues.VideoCodecH264;
             ChartRenderCompletionTailSeconds = 5f;
             ChartRenderAudioSyncOffsetMs = 0f;
             ChartRenderShowHitJudgments = true;

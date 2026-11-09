@@ -69,12 +69,18 @@ const settingLabels: Record<string, Record<string, string>> = {
   ChartRenderPreviewMode: { full: "完整", dim: "暗色", minimal: "极简", Full: "完整", Dim: "暗色", Minimal: "极简" },
   ChartRenderAudioFormat: { aac: "AAC", flac: "FLAC（无损）", alac: "ALAC（无损）", AAC: "AAC", FLAC: "FLAC（无损）", ALAC: "ALAC（无损）" },
   ChartRenderVideoFormat: {
-    mp4: "MP4（H.264/AAC）",
+    mp4: "MP4",
     mkv: "MKV（Matroska）",
     mov: "MOV（QuickTime）",
-    MP4: "MP4（H.264/AAC）",
+    MP4: "MP4",
     MKV: "MKV（Matroska）",
     MOV: "MOV（QuickTime）",
+  },
+  ChartRenderVideoCodec: {
+    h264: "H.264（兼容性最好，推荐）",
+    hevc: "HEVC / H.265（体积更小）",
+    av1: "AV1（体积最小，编码较慢）",
+    prores: "ProRes 422 HQ（剪辑用，体积很大）",
   },
 };
 
@@ -376,6 +382,14 @@ function RenderPage({ state, onSettings, onOpenDocument, onStart, onCancel }: { 
   const [professionalOpen, setProfessionalOpen] = React.useState(false);
   const isGameView = state.settings.ChartRenderCaptureSource.toLowerCase() === "game-view";
   const isCustomEncoder = state.settings.ChartRenderEncoderMode.toLowerCase() === "custom";
+  const videoCodec = state.settings.ChartRenderVideoCodec.toLowerCase();
+  const codecNote = isCustomEncoder && videoCodec !== "h264"
+    ? "当前编码档位为“自定义”，该档位固定使用 H.264，视频编码格式的选择不会生效。"
+    : videoCodec === "prores"
+      ? "ProRes 只能保存为 MOV，会忽略上面的视频输出格式；文件非常大，适合导入剪辑软件。"
+      : videoCodec === "av1"
+        ? "AV1 硬件编码需要 NVIDIA RTX 40 系或更新的显卡；不支持时改用 CPU 编码，速度会明显变慢。"
+        : null;
   return <>
     <PageHeading title="谱面渲染" description="实时查看渲染阶段、编码状态和队列压力。" />
     {terminalResult ? <div className={`render-result-banner ${terminalResult.kind}`}><span className="render-result-icon">{terminalResult.kind === "success" ? <IconCheckCircle /> : terminalResult.kind === "failed" ? <IconCloseCircle /> : <IconInfoCircle />}</span><div><strong>{terminalResult.title}</strong><span>{terminalResult.detail}</span>{state.render.outputPath && terminalResult.kind === "success" ? <code title={state.render.outputPath}>{state.render.outputPath}</code> : null}</div></div> : null}
@@ -413,6 +427,8 @@ function RenderPage({ state, onSettings, onOpenDocument, onStart, onCancel }: { 
         <SettingNumber label="帧率" value={state.settings.ChartRenderFps} min={1} max={240} step={1} onChange={(value) => onSettings({ ChartRenderFps: value })} suffix="帧/秒" disabled={settingsLocked} />
         <SettingNumber label="结束后延迟停止" value={state.settings.ChartRenderCompletionTailSeconds} min={0} step={0.1} onChange={(value) => onSettings({ ChartRenderCompletionTailSeconds: value })} suffix="秒" disabled={settingsLocked} />
         <SettingSelect label="视频输出格式" group="ChartRenderVideoFormat" value={state.settings.ChartRenderVideoFormat} options={["mp4", "mkv", "mov"]} onChange={(value) => onSettings({ ChartRenderVideoFormat: value })} disabled={settingsLocked} />
+        <SettingSelect label="视频编码格式" group="ChartRenderVideoCodec" value={state.settings.ChartRenderVideoCodec} options={["h264", "hevc", "av1", "prores"]} onChange={(value) => onSettings({ ChartRenderVideoCodec: value })} disabled={settingsLocked} />
+        {codecNote ? <InfoBlock text={codecNote} /> : null}
         <SettingSwitch label="渲染时显示判定文字" description="控制成品视频中是否显示 Perfect、Early、Late 等判定文字。" value={state.settings.ChartRenderShowHitJudgments} onChange={(value) => onSettings({ ChartRenderShowHitJudgments: value })} disabled={settingsLocked} />
         <SettingSwitch label="仅渲染选中段落" description="开启后需要在编辑器中框选至少两个连续砖块。" value={state.settings.ChartRenderUseSelectedRange} onChange={(value) => onSettings({ ChartRenderUseSelectedRange: value })} disabled={settingsLocked} />
       </div>
@@ -422,7 +438,7 @@ function RenderPage({ state, onSettings, onOpenDocument, onStart, onCancel }: { 
         <div className="settings-grid">
           <SettingText label="工作区目录" value={state.settings.ChartRenderWorkspaceDirectory} onChange={(value) => onSettings({ ChartRenderWorkspaceDirectory: value })} disabled={settingsLocked} />
           <SettingSelect label="编码档位" group="ChartRenderEncoderMode" value={state.settings.ChartRenderEncoderMode} options={["auto-balanced", "fastest", "balanced", "quality", "cpu-compatibility", "custom"]} onChange={(value) => onSettings({ ChartRenderEncoderMode: value })} disabled={settingsLocked} />
-          <SettingNumber label="画质参数" value={state.settings.ChartRenderCrf} min={0} max={51} step={1} onChange={(value) => onSettings({ ChartRenderCrf: value })} suffix="" disabled={settingsLocked} />
+          <SettingNumber label="画质参数（CRF，越小越清晰、文件越大）" value={state.settings.ChartRenderCrf} min={0} max={51} step={1} onChange={(value) => onSettings({ ChartRenderCrf: value })} suffix="" disabled={settingsLocked} />
           <SettingNumber label="视频码率" value={state.settings.ChartRenderBitrateMbps} min={0} max={300} step={1} onChange={(value) => onSettings({ ChartRenderBitrateMbps: value })} suffix="Mbps" disabled={settingsLocked} />
           {isCustomEncoder ? <SettingText label="编码方式" value={state.settings.ChartRenderPreset} onChange={(value) => onSettings({ ChartRenderPreset: value })} disabled={settingsLocked} /> : null}
           <SettingSelect label="回读格式" group="ChartRenderCaptureFormat" value={state.settings.ChartRenderCaptureFormat} options={["rgba", "bgra"]} onChange={(value) => onSettings({ ChartRenderCaptureFormat: value })} disabled={settingsLocked} />

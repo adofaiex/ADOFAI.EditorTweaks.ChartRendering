@@ -589,6 +589,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                     case "ChartRenderPreviewMode": settings.ChartRenderPreviewMode = GetString(change.Value, settings.ChartRenderPreviewMode); break;
                     case "ChartRenderAudioFormat": settings.ChartRenderAudioFormat = GetString(change.Value, settings.ChartRenderAudioFormat); break;
                     case "ChartRenderVideoFormat": settings.ChartRenderVideoFormat = GetString(change.Value, settings.ChartRenderVideoFormat); break;
+                    case "ChartRenderVideoCodec": settings.ChartRenderVideoCodec = GetString(change.Value, settings.ChartRenderVideoCodec); break;
                     case "ChartRenderCompletionTailSeconds": settings.ChartRenderCompletionTailSeconds = GetFloat(change.Value, settings.ChartRenderCompletionTailSeconds); break;
                     case "ChartRenderAudioSyncOffsetMs": settings.ChartRenderAudioSyncOffsetMs = GetFloat(change.Value, settings.ChartRenderAudioSyncOffsetMs); break;
                     case "ChartRenderShowHitJudgments": settings.ChartRenderShowHitJudgments = GetBool(change.Value, settings.ChartRenderShowHitJudgments); break;

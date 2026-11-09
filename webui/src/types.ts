@@ -36,6 +36,7 @@ export interface SettingsState {
   ChartRenderShowHitJudgments: boolean;
   ChartRenderUseSelectedRange: boolean;
   ChartRenderCustomMuxArgs: string;
+  ChartRenderVideoCodec: string;
   FfmpegCustomPath: string;
 }
 

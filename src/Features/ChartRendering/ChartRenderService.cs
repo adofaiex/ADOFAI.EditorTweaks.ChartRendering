@@ -143,6 +143,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 WorkspaceDirectory = source.ChartRenderWorkspaceDirectory,
                 OutputDirectory = source.ChartRenderExportDirectory,
                 VideoFormat = ParseVideoFormat(source.ChartRenderVideoFormat),
+                VideoCodec = ChartRenderOptionValues.ParseVideoCodec(source.ChartRenderVideoCodec),
                 AudioFormat = ParseAudioFormat(source.ChartRenderAudioFormat),
                 EncoderMode = ParseEncoderMode(source.ChartRenderEncoderMode),
                 ReadbackFormat = ChartRenderOptionValues.NormalizeCaptureFormat(source.ChartRenderCaptureFormat) == ChartRenderOptionValues.CaptureBgra
@@ -354,6 +355,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 || !Enum.IsDefined(typeof(ChartRenderPlaybackMode), request.PlaybackMode)
                 || !Enum.IsDefined(typeof(ChartRenderRangeMode), request.Range.Mode)
                 || !Enum.IsDefined(typeof(ChartRenderVideoFormat), request.VideoFormat)
+                || !Enum.IsDefined(typeof(ChartRenderVideoCodec), request.VideoCodec)
                 || !Enum.IsDefined(typeof(ChartRenderAudioFormat), request.AudioFormat)
                 || !Enum.IsDefined(typeof(ChartRenderEncoderMode), request.EncoderMode)
                 || !Enum.IsDefined(typeof(ChartRenderReadbackFormat), request.ReadbackFormat)
@@ -504,6 +506,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 ChartRenderPreviewMode = ToInternal(request.PreviewMode),
                 ChartRenderAudioFormat = ToInternal(request.AudioFormat),
                 ChartRenderVideoFormat = ToInternal(request.VideoFormat),
+                ChartRenderVideoCodec = ChartRenderOptionValues.FormatVideoCodec(request.VideoCodec),
                 ChartRenderCompletionTailSeconds = request.CompletionTailSeconds,
                 ChartRenderAudioSyncOffsetMs = request.AudioSyncOffsetMilliseconds,
                 ChartRenderShowHitJudgments = request.ShowHitJudgments,

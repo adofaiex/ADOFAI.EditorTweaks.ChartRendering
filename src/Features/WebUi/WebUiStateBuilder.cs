@@ -83,6 +83,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 ["ChartRenderPreviewMode"] = settings.ChartRenderPreviewMode ?? string.Empty,
                 ["ChartRenderAudioFormat"] = settings.ChartRenderAudioFormat ?? string.Empty,
                 ["ChartRenderVideoFormat"] = settings.ChartRenderVideoFormat ?? string.Empty,
+                ["ChartRenderVideoCodec"] = settings.ChartRenderVideoCodec ?? string.Empty,
                 ["ChartRenderCompletionTailSeconds"] = settings.ChartRenderCompletionTailSeconds,
                 ["ChartRenderAudioSyncOffsetMs"] = settings.ChartRenderAudioSyncOffsetMs,
                 ["ChartRenderShowHitJudgments"] = settings.ChartRenderShowHitJudgments,
