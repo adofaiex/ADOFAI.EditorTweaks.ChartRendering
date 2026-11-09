@@ -149,6 +149,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 VideoCodec = ChartRenderOptionValues.ParseVideoCodec(source.ChartRenderVideoCodec),
                 AudioFormat = ParseAudioFormat(source.ChartRenderAudioFormat),
                 EncoderMode = ParseEncoderMode(source.ChartRenderEncoderMode),
+                HardwarePreset = ChartRenderOptionValues.ParseHardwarePreset(source.ChartRenderHardwarePreset),
+                CpuPreset = ChartRenderOptionValues.ParseCpuPreset(source.ChartRenderCpuPreset),
                 ReadbackFormat = ChartRenderOptionValues.NormalizeCaptureFormat(source.ChartRenderCaptureFormat) == ChartRenderOptionValues.CaptureBgra
                     ? ChartRenderReadbackFormat.Bgra
                     : ChartRenderReadbackFormat.Rgba,
@@ -361,6 +363,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 || !Enum.IsDefined(typeof(ChartRenderVideoCodec), request.VideoCodec)
                 || !Enum.IsDefined(typeof(ChartRenderAudioFormat), request.AudioFormat)
                 || !Enum.IsDefined(typeof(ChartRenderEncoderMode), request.EncoderMode)
+                || !Enum.IsDefined(typeof(ChartRenderHardwarePreset), request.HardwarePreset)
+                || !Enum.IsDefined(typeof(ChartRenderCpuPreset), request.CpuPreset)
                 || !Enum.IsDefined(typeof(ChartRenderReadbackFormat), request.ReadbackFormat)
                 || !Enum.IsDefined(typeof(ChartRenderPreviewMode), request.PreviewMode))
             {
@@ -500,6 +504,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 ChartRenderBitrateMbps = request.BitrateMbps,
                 ChartRenderPreset = request.CustomEncoderPreset,
                 ChartRenderEncoderMode = ToInternal(request.EncoderMode),
+                ChartRenderHardwarePreset = ChartRenderOptionValues.FormatHardwarePreset(request.HardwarePreset),
+                ChartRenderCpuPreset = ChartRenderOptionValues.FormatCpuPreset(request.CpuPreset),
                 ChartRenderCaptureFormat = request.ReadbackFormat == ChartRenderReadbackFormat.Bgra
                     ? ChartRenderOptionValues.CaptureBgra
                     : ChartRenderOptionValues.CaptureRgba,

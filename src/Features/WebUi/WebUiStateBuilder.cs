@@ -82,6 +82,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 ["ChartRenderBitrateMbps"] = settings.ChartRenderBitrateMbps,
                 ["ChartRenderPreset"] = settings.ChartRenderPreset ?? string.Empty,
                 ["ChartRenderEncoderMode"] = settings.ChartRenderEncoderMode ?? string.Empty,
+                ["ChartRenderHardwarePreset"] = settings.ChartRenderHardwarePreset ?? string.Empty,
+                ["ChartRenderCpuPreset"] = settings.ChartRenderCpuPreset ?? string.Empty,
                 ["ChartRenderCaptureFormat"] = settings.ChartRenderCaptureFormat ?? string.Empty,
                 ["ChartRenderCaptureSource"] = settings.ChartRenderCaptureSource ?? string.Empty,
                 ["ChartRenderPreviewMode"] = settings.ChartRenderPreviewMode ?? string.Empty,

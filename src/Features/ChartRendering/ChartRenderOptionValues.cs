@@ -1,3 +1,4 @@
+using System;
 using ADOFAI.EditorTweaks.Api.Rendering;
 
 namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
@@ -25,6 +26,51 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         public const string VideoCodecHevc = "hevc";
         public const string VideoCodecAv1 = "av1";
         public const string VideoCodecProRes = "prores";
+
+        // "auto" = follow the encoder mode (the behavior before these presets existed).
+        public const string PresetFollowEncoderMode = "auto";
+
+        public static readonly string[] HardwarePresets = { PresetFollowEncoderMode, "p1", "p2", "p3", "p4", "p5", "p6", "p7" };
+
+        // Same order as ChartRenderCpuPreset, fastest first.
+        public static readonly string[] CpuPresets =
+        {
+            PresetFollowEncoderMode, "ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"
+        };
+
+        public static string NormalizeHardwarePreset(string? value)
+        {
+            string lowered = (value ?? string.Empty).Trim().ToLowerInvariant();
+            return Array.IndexOf(HardwarePresets, lowered) > 0 ? lowered : PresetFollowEncoderMode;
+        }
+
+        public static string NormalizeCpuPreset(string? value)
+        {
+            string lowered = (value ?? string.Empty).Trim().ToLowerInvariant();
+            return Array.IndexOf(CpuPresets, lowered) > 0 ? lowered : PresetFollowEncoderMode;
+        }
+
+        public static ChartRenderHardwarePreset ParseHardwarePreset(string? value)
+        {
+            return (ChartRenderHardwarePreset)Math.Max(0, Array.IndexOf(HardwarePresets, NormalizeHardwarePreset(value)));
+        }
+
+        public static ChartRenderCpuPreset ParseCpuPreset(string? value)
+        {
+            return (ChartRenderCpuPreset)Math.Max(0, Array.IndexOf(CpuPresets, NormalizeCpuPreset(value)));
+        }
+
+        public static string FormatHardwarePreset(ChartRenderHardwarePreset preset)
+        {
+            int index = (int)preset;
+            return index > 0 && index < HardwarePresets.Length ? HardwarePresets[index] : PresetFollowEncoderMode;
+        }
+
+        public static string FormatCpuPreset(ChartRenderCpuPreset preset)
+        {
+            int index = (int)preset;
+            return index > 0 && index < CpuPresets.Length ? CpuPresets[index] : PresetFollowEncoderMode;
+        }
 
         public const string AudioFormatAac = "aac";
         public const string AudioFormatFlac = "flac";

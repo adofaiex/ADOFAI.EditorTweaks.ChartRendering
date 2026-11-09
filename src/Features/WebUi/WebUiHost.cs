@@ -584,6 +584,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                     case "ChartRenderBitrateMbps": settings.ChartRenderBitrateMbps = GetInt(change.Value, settings.ChartRenderBitrateMbps); break;
                     case "ChartRenderPreset": settings.ChartRenderPreset = GetString(change.Value, settings.ChartRenderPreset); break;
                     case "ChartRenderEncoderMode": settings.ChartRenderEncoderMode = GetString(change.Value, settings.ChartRenderEncoderMode); break;
+                    case "ChartRenderHardwarePreset": settings.ChartRenderHardwarePreset = GetString(change.Value, settings.ChartRenderHardwarePreset); break;
+                    case "ChartRenderCpuPreset": settings.ChartRenderCpuPreset = GetString(change.Value, settings.ChartRenderCpuPreset); break;
                     case "ChartRenderCaptureFormat": settings.ChartRenderCaptureFormat = GetString(change.Value, settings.ChartRenderCaptureFormat); break;
                     case "ChartRenderCaptureSource": settings.ChartRenderCaptureSource = GetString(change.Value, settings.ChartRenderCaptureSource); break;
                     case "ChartRenderPreviewMode": settings.ChartRenderPreviewMode = GetString(change.Value, settings.ChartRenderPreviewMode); break;

@@ -63,6 +63,8 @@ export function createMockState(): WebUiState {
     ChartRenderUseSelectedRange: false,
     ChartRenderCustomMuxArgs: "",
     ChartRenderVideoCodec: "h264",
+    ChartRenderHardwarePreset: "auto",
+    ChartRenderCpuPreset: "auto",
     FfmpegCustomPath: "",
   };
 

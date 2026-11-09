@@ -82,6 +82,28 @@ const settingLabels: Record<string, Record<string, string>> = {
     av1: "AV1（体积最小，编码较慢）",
     prores: "ProRes 422 HQ（剪辑用，体积很大）",
   },
+  ChartRenderHardwarePreset: {
+    auto: "跟随编码档位",
+    p1: "p1（最快）",
+    p2: "p2",
+    p3: "p3",
+    p4: "p4（均衡）",
+    p5: "p5",
+    p6: "p6",
+    p7: "p7（质量最好，最慢）",
+  },
+  ChartRenderCpuPreset: {
+    auto: "跟随编码档位",
+    ultrafast: "ultrafast（最快）",
+    superfast: "superfast",
+    veryfast: "veryfast",
+    faster: "faster",
+    fast: "fast",
+    medium: "medium",
+    slow: "slow",
+    slower: "slower",
+    veryslow: "veryslow（质量最好，最慢）",
+  },
 };
 
 const labelFor = (group: string, value: string) => settingLabels[group]?.[value] ?? value;
@@ -428,6 +450,14 @@ function RenderPage({ state, onSettings, onOpenDocument, onStart, onCancel }: { 
   const shownAudioFormat = outputsMov && state.settings.ChartRenderAudioFormat.toLowerCase() === "flac" ? "alac" : state.settings.ChartRenderAudioFormat;
   const disabledVideoFormats = isProRes ? { mp4: proResOnlyMov, mkv: proResOnlyMov } : undefined;
   const disabledAudioFormats = outputsMov ? { flac: movNoFlac } : undefined;
+  // The custom encoder mode has its own preset field, and ProRes has no speed presets.
+  const showPresets = !isCustomEncoder && !isProRes;
+  const slowCpuPresets = ["medium", "slow", "slower", "veryslow"];
+  const presetNote = !showPresets
+    ? (isProRes && !isCustomEncoder ? "ProRes 没有速度预设，显卡和 CPU 编码预设不适用。" : null)
+    : slowCpuPresets.includes(state.settings.ChartRenderCpuPreset.toLowerCase())
+      ? "注意：较慢的 CPU 预设会明显拖慢整个渲染，因为每一帧都要等编码器处理完。显卡编码预设只在使用 NVIDIA 显卡编码时生效，CPU 编码预设只在用 CPU 编码时生效（没有 NVIDIA 显卡、选了“CPU 兼容”档位，或显卡不支持 AV1 时）。"
+      : "显卡编码预设只在使用 NVIDIA 显卡编码时生效，CPU 编码预设只在用 CPU 编码时生效（没有 NVIDIA 显卡、选了“CPU 兼容”档位，或显卡不支持 AV1 时）。预设越靠后，同样画质下文件越小，但编码越慢。";
   return <>
     <PageHeading title="谱面渲染" description="实时查看渲染阶段、编码状态和队列压力。" />
     {terminalResult ? <div className={`render-result-banner ${terminalResult.kind}`}><span className="render-result-icon">{terminalResult.kind === "success" ? <IconCheckCircle /> : terminalResult.kind === "failed" ? <IconCloseCircle /> : <IconInfoCircle />}</span><div><strong>{terminalResult.title}</strong><span>{terminalResult.detail}</span>{state.render.outputPath && terminalResult.kind === "success" ? <code title={state.render.outputPath}>{state.render.outputPath}</code> : null}</div></div> : null}
@@ -477,6 +507,11 @@ function RenderPage({ state, onSettings, onOpenDocument, onStart, onCancel }: { 
         <div className="settings-grid">
           <SettingText label="工作区目录" value={state.settings.ChartRenderWorkspaceDirectory} onChange={(value) => onSettings({ ChartRenderWorkspaceDirectory: value })} disabled={settingsLocked} />
           <SettingSelect label="编码档位" group="ChartRenderEncoderMode" value={state.settings.ChartRenderEncoderMode} options={["auto-balanced", "fastest", "balanced", "quality", "cpu-compatibility", "custom"]} onChange={(value) => onSettings({ ChartRenderEncoderMode: value })} disabled={settingsLocked} />
+          {showPresets ? <>
+            <SettingSelect label="显卡编码预设" group="ChartRenderHardwarePreset" value={state.settings.ChartRenderHardwarePreset} options={["auto", "p1", "p2", "p3", "p4", "p5", "p6", "p7"]} onChange={(value) => onSettings({ ChartRenderHardwarePreset: value })} disabled={settingsLocked} />
+            <SettingSelect label="CPU 编码预设" group="ChartRenderCpuPreset" value={state.settings.ChartRenderCpuPreset} options={["auto", "ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"]} onChange={(value) => onSettings({ ChartRenderCpuPreset: value })} disabled={settingsLocked} />
+          </> : null}
+          {presetNote ? <InfoBlock text={presetNote} /> : null}
           <SettingNumber label="画质参数（CRF，越小越清晰、文件越大）" value={state.settings.ChartRenderCrf} min={0} max={51} step={1} onChange={(value) => onSettings({ ChartRenderCrf: value })} suffix="" disabled={settingsLocked} />
           <SettingNumber label="视频码率" value={state.settings.ChartRenderBitrateMbps} min={0} max={300} step={1} onChange={(value) => onSettings({ ChartRenderBitrateMbps: value })} suffix="Mbps" disabled={settingsLocked} />
           {isCustomEncoder ? <SettingText label="编码方式" value={state.settings.ChartRenderPreset} onChange={(value) => onSettings({ ChartRenderPreset: value })} disabled={settingsLocked} /> : null}

@@ -37,6 +37,8 @@ export interface SettingsState {
   ChartRenderUseSelectedRange: boolean;
   ChartRenderCustomMuxArgs: string;
   ChartRenderVideoCodec: string;
+  ChartRenderHardwarePreset: string;
+  ChartRenderCpuPreset: string;
   FfmpegCustomPath: string;
 }
 

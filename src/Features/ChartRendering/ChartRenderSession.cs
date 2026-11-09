@@ -337,7 +337,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     settings.ChartRenderAudioSyncOffsetMs,
                     settings.ChartRenderAudioFormat,
                     settings.ChartRenderCustomMuxArgs,
-                    settings.ChartRenderVideoCodec);
+                    settings.ChartRenderVideoCodec,
+                    settings.ChartRenderHardwarePreset,
+                    settings.ChartRenderCpuPreset);
                 encoder.BeginVideo();
                 EncoderName = encoder.EncoderName;
                 BeginForcedVisualClock();

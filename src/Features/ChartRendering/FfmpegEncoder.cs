@@ -35,6 +35,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private readonly string customMuxArgs;
         private readonly float audioSyncOffsetMs;
         private readonly string videoCodec;
+        // Explicit presets, or "auto" to use the preset the encoder mode picks.
+        private readonly string hardwarePreset;
+        private readonly string cpuPreset;
         // The codec the video process actually encodes: the custom encoder mode always uses H.264.
         private string effectiveVideoCodec = ChartRenderOptionValues.VideoCodecH264;
         // Guards the process field, which a worker thread swaps (video -> mux -> null) while the
@@ -70,7 +73,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             float audioSyncOffsetMs,
             string audioFormat,
             string customMuxArgs,
-            string videoCodec = ChartRenderOptionValues.VideoCodecH264)
+            string videoCodec = ChartRenderOptionValues.VideoCodecH264,
+            string hardwarePreset = ChartRenderOptionValues.PresetFollowEncoderMode,
+            string cpuPreset = ChartRenderOptionValues.PresetFollowEncoderMode)
         {
             this.ffmpegPath = ffmpegPath;
             this.tempVideoPath = tempVideoPath;
@@ -89,6 +94,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             this.audioFormat = ChartRenderOptionValues.NormalizeAudioFormat(audioFormat);
             this.customMuxArgs = (customMuxArgs ?? string.Empty).Trim();
             this.videoCodec = ChartRenderOptionValues.NormalizeVideoCodec(videoCodec);
+            this.hardwarePreset = ChartRenderOptionValues.NormalizeHardwarePreset(hardwarePreset);
+            this.cpuPreset = ChartRenderOptionValues.NormalizeCpuPreset(cpuPreset);
         }
 
         public string EncoderName { get; private set; } = "unknown";
@@ -108,6 +115,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
             ChartRenderDiagnostics.Log("FFmpeg video args: mode=" + encoderMode
                 + " codec=" + effectiveVideoCodec
+                + " hardwarePreset=" + hardwarePreset
+                + " cpuPreset=" + cpuPreset
                 + " input=" + inputPixelFormat
                 + " verticalFlip=" + flipVertically
                 + " rate=" + (UsesConstantQuality() ? "crf " + ClampCrf() : GetTargetBitrateMbps() + "M")
@@ -526,19 +535,22 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
             if (IsEncoderAvailable(ref svtAv1Available, "libsvtav1"))
             {
-                EncoderName = "libsvtav1 preset 8";
-                Main.Log("Chart renderer using libsvtav1 preset 8.");
+                int svtPreset = GetSvtAv1Preset();
+                EncoderName = "libsvtav1 preset " + svtPreset;
+                Main.Log("Chart renderer using libsvtav1 preset " + svtPreset + ".");
                 // SVT-AV1 rejects CRF 0.
                 string rate = UsesConstantQuality() ? "-crf " + Math.Max(1, ClampCrf()) : "-b:v " + GetTargetBitrateMbps() + "M";
-                return "-c:v libsvtav1 -preset 8 " + rate + " -g " + GetGopSize();
+                return "-c:v libsvtav1 -preset " + svtPreset + " " + rate + " -g " + GetGopSize();
             }
 
             if (IsEncoderAvailable(ref aomAv1Available, "libaom-av1"))
             {
-                EncoderName = "libaom-av1 realtime";
-                Main.Log("Chart renderer using libaom-av1 (realtime, cpu-used 8). AV1 on the CPU is slow.");
+                int cpuUsed = GetAomCpuUsed();
+                string usage = cpuUsed >= 5 ? "realtime" : "good";
+                EncoderName = "libaom-av1 " + usage + " cpu-used " + cpuUsed;
+                Main.Log("Chart renderer using libaom-av1 (" + usage + ", cpu-used " + cpuUsed + "). AV1 on the CPU is slow.");
                 string rate = UsesConstantQuality() ? "-crf " + ClampCrf() + " -b:v 0" : "-b:v " + GetTargetBitrateMbps() + "M";
-                return "-c:v libaom-av1 -usage realtime -cpu-used 8 -row-mt 1 -tiles 2x2 " + rate + " -g " + GetGopSize();
+                return "-c:v libaom-av1 -usage " + usage + " -cpu-used " + cpuUsed + " -row-mt 1 -tiles 2x2 " + rate + " -g " + GetGopSize();
             }
 
             throw new InvalidOperationException("No AV1 encoder is available: av1_nvenc needs an NVIDIA RTX 40 series or newer GPU, "
@@ -593,6 +605,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         private string GetNvencPreset()
         {
+            if (hardwarePreset != ChartRenderOptionValues.PresetFollowEncoderMode)
+            {
+                return hardwarePreset;
+            }
+
             switch (encoderMode)
             {
                 case ChartRenderOptionValues.EncoderFastest:
@@ -606,8 +623,14 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
         }
 
+        // x264/x265 preset name; also the scale the AV1 CPU encoders are mapped from.
         private string GetX264Preset()
         {
+            if (cpuPreset != ChartRenderOptionValues.PresetFollowEncoderMode)
+            {
+                return cpuPreset;
+            }
+
             switch (encoderMode)
             {
                 case ChartRenderOptionValues.EncoderFastest:
@@ -620,6 +643,31 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 default:
                     return "veryfast";
             }
+        }
+
+        // Position of an explicit CPU preset from 1 (ultrafast) to 9 (veryslow); 0 when following the
+        // encoder mode, where the AV1 CPU encoders keep their earlier fixed speed.
+        private int GetCpuPresetRank()
+        {
+            return cpuPreset == ChartRenderOptionValues.PresetFollowEncoderMode
+                ? 0
+                : Math.Max(0, Array.IndexOf(ChartRenderOptionValues.CpuPresets, cpuPreset));
+        }
+
+        // SVT-AV1 presets run 0 (slowest) to 13: ultrafast -> 12 ... fast -> 8 ... veryslow -> 4.
+        private int GetSvtAv1Preset()
+        {
+            int rank = GetCpuPresetRank();
+            return rank == 0 ? 8 : 13 - rank;
+        }
+
+        // libaom cpu-used: faster -> 7, fast -> 6, medium -> 5 ... veryslow -> 2. FFmpeg only accepts
+        // 0-8 for it (tested), so ultrafast, superfast and veryfast all use 8. The realtime usage only
+        // covers the fast end, so the slower ones use the "good" usage.
+        private int GetAomCpuUsed()
+        {
+            int rank = GetCpuPresetRank();
+            return rank == 0 ? 8 : Math.Min(8, 11 - rank);
         }
 
         private int ClampCrf()

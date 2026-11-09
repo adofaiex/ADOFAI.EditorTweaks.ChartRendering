@@ -26,6 +26,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering
         public int ChartRenderBitrateMbps = ChartRenderBitratePresets.AutoBitrateMbps;
         public string ChartRenderPreset = "veryfast";
         public string ChartRenderEncoderMode = ChartRenderOptionValues.EncoderAutoBalanced;
+        public string ChartRenderHardwarePreset = ChartRenderOptionValues.PresetFollowEncoderMode;
+        public string ChartRenderCpuPreset = ChartRenderOptionValues.PresetFollowEncoderMode;
         public string ChartRenderCaptureFormat = ChartRenderOptionValues.CaptureRgba;
         public string ChartRenderCaptureSource = ChartRenderOptionValues.CaptureSourceCamera;
         public string ChartRenderPreviewMode = ChartRenderOptionValues.PreviewFull;
@@ -74,6 +76,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             ChartRenderBitrateMbps = Mathf.Clamp(ChartRenderBitrateMbps, ChartRenderBitratePresets.AutoBitrateMbps, ChartRenderBitratePresets.MaxBitrateMbps);
             ChartRenderPreset = string.IsNullOrWhiteSpace(ChartRenderPreset) ? "veryfast" : ChartRenderPreset.Trim();
             ChartRenderEncoderMode = ChartRenderOptionValues.NormalizeEncoderMode(ChartRenderEncoderMode);
+            ChartRenderHardwarePreset = ChartRenderOptionValues.NormalizeHardwarePreset(ChartRenderHardwarePreset);
+            ChartRenderCpuPreset = ChartRenderOptionValues.NormalizeCpuPreset(ChartRenderCpuPreset);
             ChartRenderCaptureFormat = ChartRenderOptionValues.NormalizeCaptureFormat(ChartRenderCaptureFormat);
             ChartRenderCaptureSource = ChartRenderOptionValues.NormalizeCaptureSource(ChartRenderCaptureSource);
             ChartRenderPreviewMode = ChartRenderOptionValues.NormalizePreviewMode(ChartRenderPreviewMode);
@@ -102,6 +106,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             ChartRenderBitrateMbps = ChartRenderBitratePresets.AutoBitrateMbps;
             ChartRenderPreset = "veryfast";
             ChartRenderEncoderMode = ChartRenderOptionValues.EncoderAutoBalanced;
+            ChartRenderHardwarePreset = ChartRenderOptionValues.PresetFollowEncoderMode;
+            ChartRenderCpuPreset = ChartRenderOptionValues.PresetFollowEncoderMode;
             ChartRenderCaptureFormat = ChartRenderOptionValues.CaptureRgba;
             ChartRenderCaptureSource = ChartRenderOptionValues.CaptureSourceCamera;
             ChartRenderPreviewMode = ChartRenderOptionValues.PreviewFull;

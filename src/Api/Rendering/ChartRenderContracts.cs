@@ -41,6 +41,37 @@ namespace ADOFAI.EditorTweaks.Api.Rendering
         ProRes = 3
     }
 
+    // Added after API v1 shipped. NVENC speed/quality preset; FollowEncoderMode keeps the preset the
+    // encoder mode picks (p1/p4/p6), as before. Not used by the Custom encoder mode or ProRes.
+    public enum ChartRenderHardwarePreset
+    {
+        FollowEncoderMode = 0,
+        P1 = 1,
+        P2 = 2,
+        P3 = 3,
+        P4 = 4,
+        P5 = 5,
+        P6 = 6,
+        P7 = 7
+    }
+
+    // Added after API v1 shipped. CPU encoder preset in x264/x265 terms (AV1 CPU encoders get the
+    // equivalent speed); FollowEncoderMode keeps the preset the encoder mode picks, as before. Slower
+    // presets slow the whole render down, because frames wait for the encoder.
+    public enum ChartRenderCpuPreset
+    {
+        FollowEncoderMode = 0,
+        Ultrafast = 1,
+        Superfast = 2,
+        Veryfast = 3,
+        Faster = 4,
+        Fast = 5,
+        Medium = 6,
+        Slow = 7,
+        Slower = 8,
+        Veryslow = 9
+    }
+
     public enum ChartRenderAudioFormat
     {
         Aac = 0,
@@ -171,6 +202,10 @@ namespace ADOFAI.EditorTweaks.Api.Rendering
 
         public ChartRenderEncoderMode EncoderMode { get; set; } = ChartRenderEncoderMode.AutoBalanced;
 
+        public ChartRenderHardwarePreset HardwarePreset { get; set; } = ChartRenderHardwarePreset.FollowEncoderMode;
+
+        public ChartRenderCpuPreset CpuPreset { get; set; } = ChartRenderCpuPreset.FollowEncoderMode;
+
         public ChartRenderReadbackFormat ReadbackFormat { get; set; } = ChartRenderReadbackFormat.Rgba;
 
         public ChartRenderPreviewMode PreviewMode { get; set; } = ChartRenderPreviewMode.Full;
@@ -208,6 +243,8 @@ namespace ADOFAI.EditorTweaks.Api.Rendering
                 VideoCodec = VideoCodec,
                 AudioFormat = AudioFormat,
                 EncoderMode = EncoderMode,
+                HardwarePreset = HardwarePreset,
+                CpuPreset = CpuPreset,
                 ReadbackFormat = ReadbackFormat,
                 PreviewMode = PreviewMode,
                 Quality = Quality,
