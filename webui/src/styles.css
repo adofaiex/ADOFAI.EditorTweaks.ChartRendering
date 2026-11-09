@@ -116,6 +116,7 @@ button { cursor: pointer; }
 .select-option:hover, .select-option.is-selected { color: var(--text); background: rgba(59, 215, 255, 0.17); }
 .select-option.is-selected { color: var(--accent); }
 .select-option-check { display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 14px; }
+.select-option:disabled, .select-option:disabled:hover { color: var(--text); background: transparent; opacity: 0.38; cursor: not-allowed; }
 .number-control { display: flex !important; align-items: center; gap: 8px; }
 .number-input, .text-input { height: 34px; width: 120px; padding: 0 12px; color: var(--text); background: #061f36; border: 1px solid var(--border); border-radius: 0; outline: none; box-shadow: none; caret-color: var(--accent); font-size: 13px; transition: border-color 160ms ease, background 160ms ease; }
 .number-input { text-align: right; }

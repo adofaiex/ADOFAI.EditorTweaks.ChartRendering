@@ -86,6 +86,30 @@ const settingLabels: Record<string, Record<string, string>> = {
 
 const labelFor = (group: string, value: string) => settingLabels[group]?.[value] ?? value;
 
+const proResOnlyMov = "ProRes 只能保存为 MOV";
+const movNoFlac = "MOV 不支持 FLAC 音频";
+
+// ProRes only fits in MOV, and MOV cannot hold FLAC (the mod switches these on its own as well, for
+// API callers). Applied to every settings change so the page never saves such a pair, and returns
+// what was switched so the user is told.
+function applyContainerRules(current: SettingsState, requested: Partial<SettingsState>): { changes: Partial<SettingsState>; notes: string[] } {
+  const next = { ...current, ...requested };
+  const changes = { ...requested };
+  const notes: string[] = [];
+  if (next.ChartRenderVideoCodec.toLowerCase() === "prores" && next.ChartRenderVideoFormat.toLowerCase() !== "mov") {
+    changes.ChartRenderVideoFormat = "mov";
+    notes.push(`${proResOnlyMov}，视频输出格式已改为 MOV。`);
+  }
+
+  const format = (changes.ChartRenderVideoFormat ?? next.ChartRenderVideoFormat).toLowerCase();
+  if (format === "mov" && next.ChartRenderAudioFormat.toLowerCase() === "flac") {
+    changes.ChartRenderAudioFormat = "alac";
+    notes.push(`${movNoFlac}，音频格式已改为 ALAC（同为无损，音质不变）。`);
+  }
+
+  return { changes, notes };
+}
+
 function App() {
   const [state, setState] = React.useState<WebUiState>(() => createMockState());
   const [page, setPage] = React.useState<PageKey>("overview");
@@ -172,22 +196,28 @@ function App() {
     return () => window.removeEventListener("keydown", preventBrowserSave);
   }, [localPreview]);
 
-  const updateSettings = async (changes: Partial<SettingsState>) => {
+  const updateSettings = async (requested: Partial<SettingsState>) => {
     if (state.render.active) {
       Message.warning("渲染进行中，设置暂时锁定，请等待渲染结束。");
       return;
     }
 
+    const { changes, notes } = applyContainerRules(state.settings, requested);
+    const announce = () => {
+      if (notes.length > 0) Message.info({ content: notes.join(" "), duration: 6000 });
+    };
     setState((current) => ({ ...current, settings: { ...current.settings, ...changes } }));
     if (demoMode) {
       Message.success("演示状态：设置已更新");
+      announce();
       return;
     }
 
     try {
       const response = await postJson<{ state: WebUiState }>("/api/settings", { changes });
       if (response.state) setState(response.state);
-      Message.success("设置已保存");
+      if (notes.length > 0) announce();
+      else Message.success("设置已保存");
     } catch (error) {
       Message.error(error instanceof Error ? error.message : "设置保存失败");
     }
@@ -386,14 +416,18 @@ function RenderPage({ state, onSettings, onOpenDocument, onStart, onCancel }: { 
   const codecNote = isCustomEncoder && videoCodec !== "h264"
     ? "当前编码档位为“自定义”，该档位固定使用 H.264，视频编码格式的选择不会生效。"
     : videoCodec === "prores"
-      ? "ProRes 只能保存为 MOV，会忽略上面的视频输出格式；文件非常大，适合导入剪辑软件。"
+      ? "ProRes 文件非常大，适合导入剪辑软件；只能保存为 MOV，音频不能用 FLAC。"
       : videoCodec === "av1"
         ? "AV1 硬件编码需要 NVIDIA RTX 40 系或更新的显卡；不支持时改用 CPU 编码，速度会明显变慢。"
         : null;
-  const outputsMov = videoCodec === "prores" || state.settings.ChartRenderVideoFormat.toLowerCase() === "mov";
-  const audioNote = outputsMov && state.settings.ChartRenderAudioFormat.toLowerCase() === "flac"
-    ? "MOV 不支持 FLAC 音频，将自动改用 ALAC（同为无损，音质不变）。"
-    : null;
+  // Settings saved before these rules existed may still pair ProRes with MP4 or MOV with FLAC; the
+  // fields show what the render will really use.
+  const isProRes = videoCodec === "prores";
+  const shownVideoFormat = isProRes ? "mov" : state.settings.ChartRenderVideoFormat;
+  const outputsMov = shownVideoFormat.toLowerCase() === "mov";
+  const shownAudioFormat = outputsMov && state.settings.ChartRenderAudioFormat.toLowerCase() === "flac" ? "alac" : state.settings.ChartRenderAudioFormat;
+  const disabledVideoFormats = isProRes ? { mp4: proResOnlyMov, mkv: proResOnlyMov } : undefined;
+  const disabledAudioFormats = outputsMov ? { flac: movNoFlac } : undefined;
   return <>
     <PageHeading title="谱面渲染" description="实时查看渲染阶段、编码状态和队列压力。" />
     {terminalResult ? <div className={`render-result-banner ${terminalResult.kind}`}><span className="render-result-icon">{terminalResult.kind === "success" ? <IconCheckCircle /> : terminalResult.kind === "failed" ? <IconCloseCircle /> : <IconInfoCircle />}</span><div><strong>{terminalResult.title}</strong><span>{terminalResult.detail}</span>{state.render.outputPath && terminalResult.kind === "success" ? <code title={state.render.outputPath}>{state.render.outputPath}</code> : null}</div></div> : null}
@@ -431,10 +465,9 @@ function RenderPage({ state, onSettings, onOpenDocument, onStart, onCancel }: { 
         <PresetSetting label="帧率预设" options={["30", "60", "120"]} active={String(state.settings.ChartRenderFps)} onSelect={(preset) => onSettings({ ChartRenderFps: Number(preset) })} disabled={settingsLocked} />
         <SettingNumber label="帧率" value={state.settings.ChartRenderFps} min={1} max={240} step={1} onChange={(value) => onSettings({ ChartRenderFps: value })} suffix="帧/秒" disabled={settingsLocked} />
         <SettingNumber label="结束后延迟停止" value={state.settings.ChartRenderCompletionTailSeconds} min={0} step={0.1} onChange={(value) => onSettings({ ChartRenderCompletionTailSeconds: value })} suffix="秒" disabled={settingsLocked} />
-        <SettingSelect label="视频输出格式" group="ChartRenderVideoFormat" value={state.settings.ChartRenderVideoFormat} options={["mp4", "mkv", "mov"]} onChange={(value) => onSettings({ ChartRenderVideoFormat: value })} disabled={settingsLocked} />
+        <SettingSelect label="视频输出格式" group="ChartRenderVideoFormat" value={shownVideoFormat} options={["mp4", "mkv", "mov"]} disabledOptions={disabledVideoFormats} onChange={(value) => onSettings({ ChartRenderVideoFormat: value })} disabled={settingsLocked} />
         <SettingSelect label="视频编码格式" group="ChartRenderVideoCodec" value={state.settings.ChartRenderVideoCodec} options={["h264", "hevc", "av1", "prores"]} onChange={(value) => onSettings({ ChartRenderVideoCodec: value })} disabled={settingsLocked} />
         {codecNote ? <InfoBlock text={codecNote} /> : null}
-        {audioNote ? <InfoBlock text={audioNote} /> : null}
         <SettingSwitch label="渲染时显示判定文字" description="控制成品视频中是否显示 Perfect、Early、Late 等判定文字。" value={state.settings.ChartRenderShowHitJudgments} onChange={(value) => onSettings({ ChartRenderShowHitJudgments: value })} disabled={settingsLocked} />
         <SettingSwitch label="仅渲染选中段落" description="开启后需要在编辑器中框选至少两个连续砖块。" value={state.settings.ChartRenderUseSelectedRange} onChange={(value) => onSettings({ ChartRenderUseSelectedRange: value })} disabled={settingsLocked} />
       </div>
@@ -448,7 +481,7 @@ function RenderPage({ state, onSettings, onOpenDocument, onStart, onCancel }: { 
           <SettingNumber label="视频码率" value={state.settings.ChartRenderBitrateMbps} min={0} max={300} step={1} onChange={(value) => onSettings({ ChartRenderBitrateMbps: value })} suffix="Mbps" disabled={settingsLocked} />
           {isCustomEncoder ? <SettingText label="编码方式" value={state.settings.ChartRenderPreset} onChange={(value) => onSettings({ ChartRenderPreset: value })} disabled={settingsLocked} /> : null}
           <SettingSelect label="回读格式" group="ChartRenderCaptureFormat" value={state.settings.ChartRenderCaptureFormat} options={["rgba", "bgra"]} onChange={(value) => onSettings({ ChartRenderCaptureFormat: value })} disabled={settingsLocked} />
-          <SettingSelect label="音频格式" group="ChartRenderAudioFormat" value={state.settings.ChartRenderAudioFormat} options={["aac", "flac", "alac"]} onChange={(value) => onSettings({ ChartRenderAudioFormat: value })} disabled={settingsLocked} />
+          <SettingSelect label="音频格式" group="ChartRenderAudioFormat" value={shownAudioFormat} options={["aac", "flac", "alac"]} disabledOptions={disabledAudioFormats} onChange={(value) => onSettings({ ChartRenderAudioFormat: value })} disabled={settingsLocked} />
           <SettingSelect label="渲染预览" group="ChartRenderPreviewMode" value={state.settings.ChartRenderPreviewMode} options={["full", "dim", "minimal"]} onChange={(value) => onSettings({ ChartRenderPreviewMode: value })} disabled={settingsLocked} />
           <SettingNumber label="音频同步偏移" value={state.settings.ChartRenderAudioSyncOffsetMs} min={-5000} max={5000} step={1} onChange={(value) => onSettings({ ChartRenderAudioSyncOffsetMs: value })} suffix="毫秒" disabled={settingsLocked} />
         </div>
@@ -566,11 +599,12 @@ function SettingText({ label, value, onChange, disabled }: { label: string; valu
   return <div className="setting-row"><div><strong>{label}</strong></div><input className="text-input" value={draft} disabled={disabled} onChange={(event) => setDraft(event.target.value)} onBlur={commit} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></div>;
 }
 
-function SettingSelect({ label, group, value, options, onChange, disabled }: { label: string; group?: string; value: string; options: string[]; onChange: (value: string) => void; disabled?: boolean }) {
-  return <div className="setting-row"><div><strong>{label}</strong></div><CustomSelect group={group} value={value} options={options} onChange={onChange} disabled={disabled} /> </div>;
+function SettingSelect({ label, group, value, options, onChange, disabled, disabledOptions }: { label: string; group?: string; value: string; options: string[]; onChange: (value: string) => void; disabled?: boolean; disabledOptions?: Record<string, string> }) {
+  return <div className="setting-row"><div><strong>{label}</strong></div><CustomSelect group={group} value={value} options={options} onChange={onChange} disabled={disabled} disabledOptions={disabledOptions} /> </div>;
 }
 
-function CustomSelect({ group, value, options, onChange, disabled }: { group?: string; value: string; options: string[]; onChange: (value: string) => void; disabled?: boolean }) {
+// disabledOptions maps an option that cannot be chosen right now to the reason, shown on hover.
+function CustomSelect({ group, value, options, onChange, disabled, disabledOptions }: { group?: string; value: string; options: string[]; onChange: (value: string) => void; disabled?: boolean; disabledOptions?: Record<string, string> }) {
   const [open, setOpen] = React.useState(false);
   const [menuStyle, setMenuStyle] = React.useState<React.CSSProperties>({});
   const controlRef = React.useRef<HTMLButtonElement>(null);
@@ -600,7 +634,10 @@ function CustomSelect({ group, value, options, onChange, disabled }: { group?: s
 
   const menu = open ? createPortal(
     <div ref={menuRef} className="select-menu" role="listbox" style={menuStyle}>
-      {options.map((option) => <button className={`select-option ${option === value ? "is-selected" : ""}`} key={option} type="button" role="option" aria-selected={option === value} onClick={() => { onChange(option); setOpen(false); }}><span className="select-option-check">{option === value ? <IconCheck /> : null}</span><span>{labelFor(group ?? "", option)}</span></button>)}
+      {options.map((option) => {
+        const disabledReason = disabledOptions?.[option];
+        return <button className={`select-option ${option === value ? "is-selected" : ""}`} key={option} type="button" role="option" aria-selected={option === value} aria-disabled={disabledReason ? true : undefined} disabled={Boolean(disabledReason)} title={disabledReason} onClick={() => { onChange(option); setOpen(false); }}><span className="select-option-check">{option === value ? <IconCheck /> : null}</span><span>{labelFor(group ?? "", option)}</span></button>;
+      })}
     </div>,
     document.body,
   ) : null;
