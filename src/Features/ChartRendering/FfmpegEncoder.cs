@@ -385,6 +385,13 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             switch (audioFormat)
             {
                 case ChartRenderOptionValues.AudioFormatFlac:
+                    // MOV cannot hold FLAC (FFmpeg: "flac only supported in MP4"); ALAC is lossless too.
+                    if (string.Equals(Path.GetExtension(finalVideoPath), ".mov", StringComparison.OrdinalIgnoreCase))
+                    {
+                        ChartRenderDiagnostics.Log("MOV cannot hold FLAC audio; using ALAC (also lossless) instead.");
+                        return "-c:a alac";
+                    }
+
                     return "-c:a flac";
                 case ChartRenderOptionValues.AudioFormatAlac:
                     return "-c:a alac";
@@ -483,11 +490,14 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 + "and this FFmpeg has neither libsvtav1 nor libaom-av1. Choose another video codec.");
         }
 
+        // prores_aw writes the same ProRes 422 HQ profile about three times faster than prores_ks,
+        // which made ProRes renders slower than CPU AV1. CT's "-bits_per_mb 8000" is not used: it
+        // raised the bitrate to about 880 Mbps at 1080p60, twice the usual HQ rate.
         private string GetProResEncoderArguments()
         {
-            EncoderName = "prores_ks (Apple ProRes 422 HQ)";
-            Main.Log("Chart renderer using prores_ks HQ.");
-            return "-c:v prores_ks -profile:v 3 -vendor apl0 -bits_per_mb 8000";
+            EncoderName = "prores_aw (Apple ProRes 422 HQ)";
+            Main.Log("Chart renderer using prores_aw HQ.");
+            return "-c:v prores_aw -profile:v 3 -vendor apl0";
         }
 
         private string GetCustomVideoEncoderArguments()

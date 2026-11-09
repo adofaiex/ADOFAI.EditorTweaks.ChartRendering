@@ -390,6 +390,10 @@ function RenderPage({ state, onSettings, onOpenDocument, onStart, onCancel }: { 
       : videoCodec === "av1"
         ? "AV1 硬件编码需要 NVIDIA RTX 40 系或更新的显卡；不支持时改用 CPU 编码，速度会明显变慢。"
         : null;
+  const outputsMov = videoCodec === "prores" || state.settings.ChartRenderVideoFormat.toLowerCase() === "mov";
+  const audioNote = outputsMov && state.settings.ChartRenderAudioFormat.toLowerCase() === "flac"
+    ? "MOV 不支持 FLAC 音频，将自动改用 ALAC（同为无损，音质不变）。"
+    : null;
   return <>
     <PageHeading title="谱面渲染" description="实时查看渲染阶段、编码状态和队列压力。" />
     {terminalResult ? <div className={`render-result-banner ${terminalResult.kind}`}><span className="render-result-icon">{terminalResult.kind === "success" ? <IconCheckCircle /> : terminalResult.kind === "failed" ? <IconCloseCircle /> : <IconInfoCircle />}</span><div><strong>{terminalResult.title}</strong><span>{terminalResult.detail}</span>{state.render.outputPath && terminalResult.kind === "success" ? <code title={state.render.outputPath}>{state.render.outputPath}</code> : null}</div></div> : null}
@@ -429,6 +433,7 @@ function RenderPage({ state, onSettings, onOpenDocument, onStart, onCancel }: { 
         <SettingSelect label="视频输出格式" group="ChartRenderVideoFormat" value={state.settings.ChartRenderVideoFormat} options={["mp4", "mkv", "mov"]} onChange={(value) => onSettings({ ChartRenderVideoFormat: value })} disabled={settingsLocked} />
         <SettingSelect label="视频编码格式" group="ChartRenderVideoCodec" value={state.settings.ChartRenderVideoCodec} options={["h264", "hevc", "av1", "prores"]} onChange={(value) => onSettings({ ChartRenderVideoCodec: value })} disabled={settingsLocked} />
         {codecNote ? <InfoBlock text={codecNote} /> : null}
+        {audioNote ? <InfoBlock text={audioNote} /> : null}
         <SettingSwitch label="渲染时显示判定文字" description="控制成品视频中是否显示 Perfect、Early、Late 等判定文字。" value={state.settings.ChartRenderShowHitJudgments} onChange={(value) => onSettings({ ChartRenderShowHitJudgments: value })} disabled={settingsLocked} />
         <SettingSwitch label="仅渲染选中段落" description="开启后需要在编辑器中框选至少两个连续砖块。" value={state.settings.ChartRenderUseSelectedRange} onChange={(value) => onSettings({ ChartRenderUseSelectedRange: value })} disabled={settingsLocked} />
       </div>
