@@ -31,7 +31,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 {
                     ["id"] = status.Feature.ToString(),
                     ["name"] = status.Name,
-                    ["description"] = status.Feature == PatchFeature.RenderInputGuard ? "渲染期间屏蔽输入干扰" : "谱面画面、音频和视频背景渲染",
+                    ["description"] = status.Feature == PatchFeature.RenderInputGuard
+                        ? "渲染期间屏蔽输入干扰"
+                        : status.Feature == PatchFeature.RenderVisualTime
+                            ? "修正视频中星球转动、彩虹变色等动画过快"
+                            : "谱面画面、音频和视频背景渲染",
                     ["state"] = GetPatchState(status.State),
                     ["patchCount"] = status.PatchCount,
                     ["failedPatchName"] = status.FailedPatchName,
