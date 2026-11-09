@@ -51,17 +51,19 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
         }
 
-        // Compared between renders to tell whether memory grows with every render.
+        // Compared between renders to tell whether memory grows with every render. Process.WorkingSet64
+        // always reads 0 under Unity's Mono, so Unity's reserved memory is logged instead. Free ThreadPool
+        // threads are logged because the Web UI answers requests from the ThreadPool.
         public static void LogMemory(string stage)
         {
             try
             {
-                using (System.Diagnostics.Process process = System.Diagnostics.Process.GetCurrentProcess())
-                {
-                    Log(stage + " memory: workingSet=" + process.WorkingSet64 / (1024L * 1024L) + " MiB"
-                        + " unityAllocated=" + UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong() / (1024L * 1024L) + " MiB"
-                        + " managed=" + GC.GetTotalMemory(false) / (1024L * 1024L) + " MiB.");
-                }
+                System.Threading.ThreadPool.GetAvailableThreads(out int freeWorkers, out int freeIo);
+                System.Threading.ThreadPool.GetMaxThreads(out int maxWorkers, out int maxIo);
+                Log(stage + " memory: unityReserved=" + UnityEngine.Profiling.Profiler.GetTotalReservedMemoryLong() / (1024L * 1024L) + " MiB"
+                    + " unityAllocated=" + UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong() / (1024L * 1024L) + " MiB"
+                    + " managed=" + GC.GetTotalMemory(false) / (1024L * 1024L) + " MiB"
+                    + " threadPoolFree=" + freeWorkers + "/" + maxWorkers + " ioFree=" + freeIo + "/" + maxIo + ".");
             }
             catch
             {

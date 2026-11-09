@@ -40,6 +40,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         // Tail of the video process's stderr, so a failed render can say why FFmpeg stopped.
         private const int VideoStderrLimit = 4000;
         private readonly StringBuilder videoStderr = new StringBuilder();
+        private Thread? videoStderrThread;
 
         public FfmpegEncoder(
             string ffmpegPath,
@@ -575,24 +576,40 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 throw new InvalidOperationException("Failed to start FFmpeg.");
             }
 
-            started.ErrorDataReceived += (_, e) =>
+            // Read stderr on a dedicated thread, not BeginErrorReadLine: under Unity's Mono that keeps a
+            // ThreadPool thread blocked for the whole encode, and the Web UI serves its requests from the
+            // ThreadPool, so the cancel button stopped responding until the encode finished.
+            StreamReader stderrReader = started.StandardError;
+            videoStderrThread = new Thread(() => ReadVideoStderr(stderrReader))
             {
-                if (e.Data == null)
-                {
-                    return;
-                }
+                IsBackground = true,
+                Name = "ADOFAI.EditorTweaks.ChartRendering.FFmpegVideoStderr"
+            };
+            videoStderrThread.Start();
+            return started;
+        }
 
-                lock (videoStderr)
+        private void ReadVideoStderr(StreamReader reader)
+        {
+            try
+            {
+                string? line;
+                while ((line = reader.ReadLine()) != null)
                 {
-                    videoStderr.AppendLine(e.Data);
-                    if (videoStderr.Length > VideoStderrLimit)
+                    lock (videoStderr)
                     {
-                        videoStderr.Remove(0, videoStderr.Length - VideoStderrLimit);
+                        videoStderr.AppendLine(line);
+                        if (videoStderr.Length > VideoStderrLimit)
+                        {
+                            videoStderr.Remove(0, videoStderr.Length - VideoStderrLimit);
+                        }
                     }
                 }
-            };
-            started.BeginErrorReadLine();
-            return started;
+            }
+            catch
+            {
+                // The stream closes when FFmpeg exits or is killed.
+            }
         }
 
         // Builds the error for a failed video encode with FFmpeg's exit code and stderr, and
@@ -612,6 +629,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 {
                     video.WaitForExit(500);
                     exitCode = " Exit code " + video.ExitCode + ".";
+                    // Let the reader pick up FFmpeg's last lines, which usually hold the actual error.
+                    videoStderrThread?.Join(500);
                 }
             }
             catch
