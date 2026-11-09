@@ -10,12 +10,15 @@
     { "key": "chartRendererSelectedRangeEditorOnly", "en": "Selected range rendering is available in the editor only.", "zh": "选中段落渲染只能在编辑器中使用。" },
     { "key": "chartRendererSelectedRangeMissing", "en": "Select at least two continuous tiles first.", "zh": "请先框选至少两个连续砖块。" },
     { "key": "chartRendererMuxing", "en": "Muxing audio", "zh": "正在合成音频" },
+    { "key": "chartRendererFinalizing", "en": "Finishing video encoding", "zh": "正在完成视频编码" },
     { "key": "chartRendererRangeStartTimeout", "en": "Timed out while preparing the selected range.", "zh": "准备选中段落超时。" },
     { "key": "chartRendererRendering", "en": "Rendering video", "zh": "正在渲染视频" },
     { "key": "chartRendererWaitingRangeStart", "en": "Preparing selected range", "zh": "正在准备选中段落" },
     { "key": "chartRendererDone", "en": "Render complete", "zh": "渲染完成" },
     { "key": "chartRendererFailed", "en": "Render failed", "zh": "渲染失败" },
     { "key": "chartRendererMissingFfmpeg", "en": "FFmpeg is missing.", "zh": "缺少 FFmpeg。" },
-    { "key": "chartRendererIncompatible", "en": "Chart rendering is unavailable for this game version.", "zh": "当前游戏版本不可用谱面渲染。" }
+    { "key": "chartRendererIncompatible", "en": "Chart rendering is unavailable for this game version.", "zh": "当前游戏版本不可用谱面渲染。" },
+    { "key": "chartRendererQuitBlocked", "en": "A video is still rendering. Cancel it in the settings page first, or close again within 10 seconds to quit anyway (the video will be lost).", "zh": "视频还在渲染。请先在设置页取消渲染；或在 10 秒内再次关闭以强制退出（视频将丢失）。" },
+    { "key": "chartRendererQuitBlockedWriting", "en": "All frames are rendered, but the video file is still being written. Please wait. Close again within 10 seconds to quit anyway (the video will be lost).", "zh": "画面已渲染完，但视频文件还在写入，请稍等。若在 10 秒内再次关闭将强制退出（视频将丢失）。" }
   ]
 }

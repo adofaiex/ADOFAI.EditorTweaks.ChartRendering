@@ -140,6 +140,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 ["taskId"] = task?.Id.ToString() ?? string.Empty,
                 ["state"] = task?.State.ToString() ?? "Idle",
                 ["cancelRequested"] = task != null && task.IsCancellationRequested,
+                // Frames are done but FFmpeg is still writing the file: closing the game now loses it.
+                ["writingOutput"] = task != null && task.State == ChartRenderTaskState.Finalizing,
+                // The game refused a close request in the last few seconds (ChartRenderQuitGuard).
+                ["quitRefused"] = task != null && !task.IsTerminal
+                    && UnityEngine.Time.realtimeSinceStartup - Features.ChartRendering.ChartRenderQuitGuard.LastRefusedAt <= 10f,
                 ["captureSource"] = task?.CaptureSource.ToString() ?? string.Empty,
                 ["outputPath"] = task?.OutputPath ?? string.Empty,
                 ["message"] = message,

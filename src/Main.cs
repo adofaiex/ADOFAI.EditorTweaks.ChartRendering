@@ -52,10 +52,12 @@ namespace ADOFAI.EditorTweaks.ChartRendering
                 }
 
                 WebUiHost.Ensure();
+                ChartRenderQuitGuard.Install();
             }
             else
             {
                 modEntry.Logger.Log("ADOFAI.EditorTweaks.ChartRendering disabled.");
+                ChartRenderQuitGuard.Uninstall();
                 WebUiHost.Destroy();
                 ChartRenderService.Destroy();
                 PatchManager.UnpatchAll();

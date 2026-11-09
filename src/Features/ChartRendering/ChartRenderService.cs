@@ -26,6 +26,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         public static bool ShowHitJudgments => instance?.task?.Request.ShowHitJudgments ?? Main.Settings.ChartRenderShowHitJudgments;
 
+        // Frames are all captured and FFmpeg is still finishing or muxing the output file.
+        public static bool IsWritingOutput => instance?.session?.IsWritingOutput == true;
+
         public static void Ensure()
         {
             if (instance != null)

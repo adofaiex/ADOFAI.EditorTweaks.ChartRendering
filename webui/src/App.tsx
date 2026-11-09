@@ -400,10 +400,12 @@ function RenderPage({ state, onSettings, onOpenDocument, onStart, onCancel }: { 
     <section className="render-panel angular-panel">
       <div className="render-head"><div><span className="eyebrow">{state.render.active ? "正在处理" : "渲染状态"}</span><h2>{progress.stage || "等待渲染"}</h2><p>{progress.detail || "从页面开始渲染后，全部进度会在这里实时更新。"}</p></div><div className="render-percent">{percent}<small>%</small></div></div>
       <div className="progress-track"><div className="progress-fill" style={{ width: `${percent}%` }} /></div>
+      {state.render.active && state.render.writingOutput ? <div className="render-lock-note"><IconInfoCircle /><span>画面已经渲染完成，正在写入视频文件。请不要关闭游戏，等进度到 100% 并显示“渲染完成”后视频才可用。</span></div> : null}
+      {state.render.active && state.render.quitRefused ? <div className="settings-note warning-note">刚才有一次关闭游戏的操作被拦下了，因为渲染还没完成。10 秒内再次关闭游戏会强制退出，视频将丢失。</div> : null}
       <div className="render-metrics">
         <Metric icon={<IconImage />} label="写入帧" value={`${progress.writtenFrames.toLocaleString()} / ${progress.totalFrames.toLocaleString()}`} />
         <Metric icon={<IconPlayArrow />} label="处理速度" value={`${progress.processingFramesPerSecond.toFixed(1)} 帧/秒`} />
-        <Metric icon={<IconRefresh />} label="预计剩余" value={progress.estimatedRemaining || "00:00:00"} />
+        <Metric icon={<IconRefresh />} label="预计剩余" value={state.render.active && state.render.writingOutput ? "写入文件中" : progress.estimatedRemaining || "00:00:00"} />
         <Metric icon={<IconInfoCircle />} label="重复帧" value={`${progress.duplicateFrames.toLocaleString()} (${(progress.duplicateRatio * 100).toFixed(2)}%)`} />
       </div>
       <div className="render-details">

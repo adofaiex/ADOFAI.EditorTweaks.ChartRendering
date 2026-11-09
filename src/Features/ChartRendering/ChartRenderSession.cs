@@ -60,7 +60,43 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         public static int AutoPlaybackEndFloor { get; private set; } = int.MaxValue;
 
-        public float Progress => progress.Progress;
+        // Capturing frames fills the bar to 90%; finishing the video and muxing the audio take the rest,
+        // so the bar no longer sits at 100% while the output file is still being written.
+        private const float CaptureProgressShare = 0.90f;
+        private const float FinishVideoProgressShare = 0.02f;
+        private OutputStage outputStage;
+
+        private enum OutputStage
+        {
+            Capturing,
+            FinishingVideo,
+            Muxing,
+            Done
+        }
+
+        public float Progress
+        {
+            get
+            {
+                switch (outputStage)
+                {
+                    case OutputStage.FinishingVideo:
+                        return CaptureProgressShare;
+                    case OutputStage.Muxing:
+                        float mux = encoder == null ? 0f : encoder.MuxProgress;
+                        return CaptureProgressShare + FinishVideoProgressShare
+                            + (1f - CaptureProgressShare - FinishVideoProgressShare) * Mathf.Clamp01(mux);
+                    case OutputStage.Done:
+                        return 1f;
+                    default:
+                        return progress.Progress * CaptureProgressShare;
+                }
+            }
+        }
+
+        // True from the end of frame capture until the output file is complete: closing the game now
+        // loses the video even though every frame has been rendered.
+        public bool IsWritingOutput => outputStage == OutputStage.FinishingVideo || outputStage == OutputStage.Muxing;
 
         public string StageText { get; private set; } = Settings.Text("chartRendererRendering");
 
@@ -484,7 +520,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 yield break;
             }
 
-            StageText = "Finalizing video";
+            StageText = Settings.Text("chartRendererFinalizing");
+            outputStage = OutputStage.FinishingVideo;
             apiTask.SetState(ChartRenderTaskState.Finalizing);
             DetailText = Path.GetFileName(tempVideoPath);
             bool backgroundOk = false;
@@ -496,6 +533,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
 
             StageText = Settings.Text("chartRendererMuxing");
+            outputStage = OutputStage.Muxing;
             DetailText = Path.GetFileName(outputPath);
             backgroundOk = false;
             yield return RunBackground(() => encoder!.MuxAudioFile(capturedAudioPath), encoder, result, deleteTempOnCancel: true, deleteTempOnFailure: false, onDone: ok => backgroundOk = ok);
@@ -506,6 +544,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
 
             Cleanup(frameCapture, encoder, restoreEditor: false, deleteTemp: false);
+            outputStage = OutputStage.Done;
             result.Success = true;
             result.OutputPath = outputPath;
             result.Message = "OK";
@@ -1014,23 +1053,30 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
         }
 
-        // A mux that was killed leaves a truncated video at the final export path. The path is
-        // unique to this render (GetUniqueOutputPath), so removing it cannot touch other files.
+        // A mux that was killed leaves a truncated video at the final export path.
+        // The mux now writes to "<output>.part" first, but both are removed in case a write got through.
+        // The paths are unique to this render (GetUniqueOutputPath), so this cannot touch other files.
         private void DeletePartialOutput()
         {
-            if (string.IsNullOrEmpty(outputPath) || !File.Exists(outputPath))
+            DeleteOutputFile(outputPath);
+            DeleteOutputFile(string.IsNullOrEmpty(outputPath) ? string.Empty : outputPath + ".part");
+        }
+
+        private void DeleteOutputFile(string path)
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
             {
                 return;
             }
 
             try
             {
-                File.Delete(outputPath);
-                WriteLog("Deleted partial output after cancel: " + outputPath);
+                File.Delete(path);
+                WriteLog("Deleted partial output after cancel: " + path);
             }
             catch (Exception ex)
             {
-                WriteLog("Failed to delete partial output " + outputPath + ": " + ex.Message);
+                WriteLog("Failed to delete partial output " + path + ": " + ex.Message);
             }
         }
 

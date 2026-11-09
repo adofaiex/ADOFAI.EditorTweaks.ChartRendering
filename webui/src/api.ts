@@ -85,6 +85,8 @@ export function createMockState(): WebUiState {
       taskId: "",
       state: "Idle",
       cancelRequested: false,
+      writingOutput: false,
+      quitRefused: false,
       captureSource: "Camera",
       outputPath: "",
       message: "",

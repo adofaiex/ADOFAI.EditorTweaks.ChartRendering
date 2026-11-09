@@ -60,6 +60,8 @@ export interface RenderState {
   taskId: string;
   state: string;
   cancelRequested: boolean;
+  writingOutput: boolean;
+  quitRefused: boolean;
   captureSource: string;
   outputPath: string;
   message: string;

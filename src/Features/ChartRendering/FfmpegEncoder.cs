@@ -49,6 +49,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private const int VideoStderrLimit = 4000;
         private readonly StringBuilder videoStderr = new StringBuilder();
         private Thread? videoStderrThread;
+        // Frames sent to the video FFmpeg (writer thread only); gives the video length for mux progress.
+        private long writtenVideoFrames;
+        private volatile float muxProgress;
 
         public FfmpegEncoder(
             string ffmpegPath,
@@ -241,17 +244,67 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             long audioBytes = new FileInfo(audioPath).Length;
             ChartRenderDiagnostics.Log("Muxing captured audio. videoBytes=" + videoBytes + " audioBytes=" + audioBytes + " audioSyncOffsetMs=" + Number(audioSyncOffsetMs));
 
-            string args = BuildMuxArguments(audioPath);
-            RunMuxProcess(args);
+            // The mux writes to "<final>.part" and only renames it once FFmpeg succeeded, so a video
+            // with the real name in the export folder is always complete. Renaming within the same
+            // folder is instant, unlike copying a finished file over from the workspace.
+            string partialPath = PartialOutputPath;
+            DeleteFileQuietly(partialPath);
+            muxProgress = 0f;
+            try
+            {
+                RunMuxProcess(BuildMuxArguments(audioPath, partialPath));
+                File.Move(partialPath, finalVideoPath);
+                muxProgress = 1f;
+            }
+            catch
+            {
+                DeleteFileQuietly(partialPath);
+                throw;
+            }
         }
 
-        private string BuildMuxArguments(string audioPath)
+        // Where the mux writes before the finished file is renamed to finalVideoPath.
+        public string PartialOutputPath => finalVideoPath + ".part";
+
+        // 0-1 while the audio mux runs, from FFmpeg's -progress output.
+        public float MuxProgress => muxProgress;
+
+        private static void DeleteFileQuietly(string path)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        // The ".part" name hides the container from FFmpeg, so the muxer is named explicitly.
+        private string GetOutputMuxer()
+        {
+            switch (Path.GetExtension(finalVideoPath).ToLowerInvariant())
+            {
+                case ".mkv":
+                    return "matroska";
+                case ".mov":
+                    return "mov";
+                default:
+                    return "mp4";
+            }
+        }
+
+        private string BuildMuxArguments(string audioPath, string outputPath)
         {
             string baseInputs = "-y -i " + Quote(tempVideoPath) + " -i " + Quote(audioPath) + " ";
             string outputArgs = (!string.IsNullOrWhiteSpace(customMuxArgs)
                     ? customMuxArgs + " "
                     : "-c:v copy " + GetVideoTagArguments() + GetAudioCodecArguments() + " -movflags +faststart ")
-                + Quote(finalVideoPath);
+                + "-f " + GetOutputMuxer() + " "
+                + Quote(outputPath);
 
             if (Math.Abs(audioSyncOffsetMs) < 0.001f)
             {
@@ -343,6 +396,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                         {
                             process!.StandardInput.BaseStream.Write(frame.Buffer, 0, frame.Length);
                         }
+
+                        writtenVideoFrames += frame.RepeatCount;
                     }
                     finally
                     {
@@ -805,10 +860,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         private void RunMuxProcess(string arguments)
         {
+            // -progress pipe:1 makes FFmpeg print key=value progress blocks on stdout for MuxProgress.
             ProcessStartInfo info = new ProcessStartInfo
             {
                 FileName = ffmpegPath,
-                Arguments = "-hide_banner -loglevel warning " + arguments,
+                Arguments = "-hide_banner -loglevel warning -nostats -progress pipe:1 " + arguments,
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardError = true,
@@ -817,6 +873,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
             StringBuilder stderr = new StringBuilder();
             StringBuilder stdout = new StringBuilder();
+            double durationSeconds = fps <= 0 ? 0.0 : writtenVideoFrames / (double)fps;
             ChartRenderDiagnostics.Log("FFmpeg mux args: " + arguments);
 
             if (aborted)
@@ -853,23 +910,22 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             {
                 using (mux)
                 {
-                    mux.ErrorDataReceived += (_, e) =>
+                    // Dedicated reader threads rather than Begin*ReadLine, which under Unity's Mono keep
+                    // ThreadPool threads blocked and starve the Web UI (see StartVideoProcess). A large
+                    // mux can run for minutes, and the cancel button must keep working meanwhile.
+                    StreamReader errorReader = mux.StandardError;
+                    StreamReader outputReader = mux.StandardOutput;
+                    Thread errorThread = StartReaderThread("FFmpegMuxStderr", errorReader, line => stderr.AppendLine(line));
+                    Thread outputThread = StartReaderThread("FFmpegMuxProgress", outputReader, line =>
                     {
-                        if (e.Data != null)
+                        if (!TryReadMuxProgress(line, durationSeconds))
                         {
-                            stderr.AppendLine(e.Data);
+                            stdout.AppendLine(line);
                         }
-                    };
-                    mux.OutputDataReceived += (_, e) =>
-                    {
-                        if (e.Data != null)
-                        {
-                            stdout.AppendLine(e.Data);
-                        }
-                    };
-                    mux.BeginErrorReadLine();
-                    mux.BeginOutputReadLine();
+                    });
                     mux.WaitForExit();
+                    errorThread.Join(2000);
+                    outputThread.Join(2000);
                     if (aborted)
                     {
                         throw new OperationCanceledException("Canceled.");
@@ -877,6 +933,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
                     if (mux.ExitCode != 0)
                     {
+                        // Read after the reader threads finished (or timed out after the process exited).
                         string detail = BuildProcessFailureDetail(stdout.ToString(), stderr.ToString());
                         ChartRenderDiagnostics.Log("FFmpeg audio mux failed with exit code " + mux.ExitCode + "." + detail);
                         throw new InvalidOperationException("FFmpeg audio mux failed with exit code " + mux.ExitCode + "." + detail);
@@ -890,6 +947,49 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     process = null;
                 }
             }
+        }
+
+        private static Thread StartReaderThread(string name, StreamReader reader, Action<string> onLine)
+        {
+            Thread thread = new Thread(() =>
+            {
+                try
+                {
+                    string? line;
+                    while ((line = reader.ReadLine()) != null)
+                    {
+                        onLine(line);
+                    }
+                }
+                catch
+                {
+                    // The stream closes when FFmpeg exits or is killed.
+                }
+            })
+            {
+                IsBackground = true,
+                Name = "ADOFAI.EditorTweaks.ChartRendering." + name
+            };
+            thread.Start();
+            return thread;
+        }
+
+        // Returns true for -progress lines (key=value), updating MuxProgress from out_time_us.
+        private bool TryReadMuxProgress(string line, double durationSeconds)
+        {
+            int separator = line.IndexOf('=');
+            if (separator <= 0 || line.IndexOf(' ') >= 0 && line.IndexOf(' ') < separator)
+            {
+                return false;
+            }
+
+            if (durationSeconds > 0.0 && line.StartsWith("out_time_us=", StringComparison.Ordinal)
+                && long.TryParse(line.Substring(separator + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out long microseconds))
+            {
+                muxProgress = (float)Math.Max(0.0, Math.Min(1.0, microseconds / 1000000.0 / durationSeconds));
+            }
+
+            return true;
         }
 
         private static string BuildProcessFailureDetail(string stdout, string stderr)
