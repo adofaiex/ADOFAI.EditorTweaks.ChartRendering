@@ -138,6 +138,33 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
             yield return null;
 
+            // A DSP buffer switch reloads the level song asynchronously; playback must not start on the
+            // cleared clip.
+            int songReloadWait = 0;
+            while (audioBuffer.IsReloadingSong && !IsCancellationRequested && songReloadWait < settings.ChartRenderFps * 15)
+            {
+                songReloadWait++;
+                DetailText = "Reloading level audio...";
+                yield return null;
+            }
+
+            if (audioBuffer.IsReloadingSong && !IsCancellationRequested)
+            {
+                result.Success = false;
+                result.ErrorCode = ChartRenderErrorCode.InitializationFailed;
+                result.Message = "Timed out while reloading the level song after switching the audio buffer.";
+                Cleanup(frameCapture, encoder, restoreEditor: true, deleteTemp: true);
+                Finish(onComplete, result);
+                yield break;
+            }
+
+            if (songReloadWait > 0)
+            {
+                WriteLog("Level song reloaded after audio buffer switch (" + songReloadWait + " frames).");
+            }
+
+            LogSongState("Before playback");
+
             apiTask.SetState(ChartRenderTaskState.WaitingForPlayback);
             if (!TryStartPlayback(out failure))
             {
@@ -349,6 +376,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     }
 
                     requestedFrames++;
+                    if (requestedFrames == fps * 5 || requestedFrames == fps * 30)
+                    {
+                        LogSongState("Render frame " + requestedFrames);
+                    }
+
                     SetForcedFrameTimeFromAudioCursor(requestedFrames);
                     ChartRenderDiagnostics.LogFrame(requestedFrames, renderFrameLimit);
                     DrainReadyFrames(framePipeline!, encoder!);
@@ -954,6 +986,31 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             if (deleteTemp)
             {
                 DeleteTempDirectory();
+            }
+        }
+
+        // Logged before playback and twice during the render, so a render without music shows whether
+        // the song was playing, muted, at zero volume or had lost its sample data.
+        private void LogSongState(string stage)
+        {
+            try
+            {
+                scrConductor? conductor = ADOBase.conductor;
+                AudioSource? song = conductor?.song;
+                AudioClip? clip = song?.clip;
+                WriteLog(stage + " song state: clip=" + (clip == null ? "null" : clip.name)
+                    + " loadType=" + (clip == null ? "-" : clip.loadType.ToString())
+                    + " loadState=" + (clip == null ? "-" : clip.loadState.ToString())
+                    + " length=" + (clip == null ? "-" : Number(clip.length))
+                    + " playing=" + (song != null && song.isPlaying)
+                    + " time=" + (song == null ? "-" : Number(song.time))
+                    + " volume=" + (song == null ? "-" : Number(song.volume))
+                    + " mute=" + (song != null && song.mute)
+                    + " songposition=" + Number(conductor == null ? double.NaN : conductor.songposition_minusi) + ".");
+            }
+            catch (Exception ex)
+            {
+                WriteLog(stage + " song state unavailable: " + ex.Message);
             }
         }
 
