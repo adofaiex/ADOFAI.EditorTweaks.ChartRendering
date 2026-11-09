@@ -24,7 +24,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             string source = ChartRenderOptionValues.NormalizeCaptureSource(captureSource);
             if (source == ChartRenderOptionValues.CaptureSourceGameView)
             {
-                return new ChartGameViewFrameCapture(settings.ChartRenderCaptureFormat);
+                return CreateGameView(settings);
             }
 
             return new ChartCameraFrameCapture(
@@ -32,6 +32,41 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 settings.ChartRenderHeight,
                 settings.ChartRenderCaptureFormat,
                 showPreview);
+        }
+
+        // Game view renders offscreen at the configured size. Before that existed the game view mode
+        // ignored the size, so API callers (such as Creplay) may still send 0x0 for it: an unusable
+        // size, or an offscreen setup that fails, falls back to capturing the screen as before.
+        private static IChartFrameCapture CreateGameView(Settings settings)
+        {
+            int width = settings.ChartRenderWidth;
+            int height = settings.ChartRenderHeight;
+            bool usableSize = width >= 16 && width <= 7680 && height >= 16 && height <= 4320
+                && (width & 1) == 0 && (height & 1) == 0;
+            if (usableSize)
+            {
+                try
+                {
+                    return new ChartOffscreenGameViewCapture(
+                        width,
+                        height,
+                        settings.ChartRenderCaptureFormat,
+                        settings.ChartRenderPreviewMode);
+                }
+                catch (Exception ex)
+                {
+                    ChartRenderDiagnostics.Log("Offscreen game view capture unavailable, falling back to screen capture at "
+                        + Screen.width + "x" + Screen.height + ": " + ex);
+                }
+            }
+            else
+            {
+                ChartRenderDiagnostics.Log("Game view output size " + width + "x" + height
+                    + " is not usable for offscreen capture; capturing the screen at "
+                    + Screen.width + "x" + Screen.height + ".");
+            }
+
+            return new ChartGameViewFrameCapture(settings.ChartRenderCaptureFormat);
         }
     }
 

@@ -62,9 +62,9 @@ const settingLabels: Record<string, Record<string, string>> = {
   ChartRenderCaptureFormat: { rgba: "RGBA", bgra: "BGRA", RGBA: "RGBA", BGRA: "BGRA" },
   ChartRenderCaptureSource: {
     camera: "摄像机渲染（推荐）",
-    "game-view": "游戏画面渲染（兼容模式）",
+    "game-view": "游戏画面渲染（包含界面）",
     Camera: "摄像机渲染（推荐）",
-    GameView: "游戏画面渲染（兼容模式）",
+    GameView: "游戏画面渲染（包含界面）",
   },
   ChartRenderPreviewMode: { full: "完整", dim: "暗色", minimal: "极简", Full: "完整", Dim: "暗色", Minimal: "极简" },
   ChartRenderAudioFormat: { aac: "AAC", flac: "FLAC（无损）", alac: "ALAC（无损）", AAC: "AAC", FLAC: "FLAC（无损）", ALAC: "ALAC（无损）" },
@@ -422,11 +422,10 @@ function RenderPage({ state, onSettings, onOpenDocument, onStart, onCancel }: { 
       <div className="settings-grid">
         <SettingText label="导出目录" value={state.settings.ChartRenderExportDirectory} onChange={(value) => onSettings({ ChartRenderExportDirectory: value })} disabled={settingsLocked} />
         <SettingSelect label="画面捕获方式" group="ChartRenderCaptureSource" value={state.settings.ChartRenderCaptureSource} options={["camera", "game-view"]} onChange={(value) => onSettings({ ChartRenderCaptureSource: value })} disabled={settingsLocked} />
-        {isGameView ? <InfoBlock text="游戏画面模式会直接使用当前游戏窗口分辨率输出；渲染结束前请保持窗口尺寸不变。" /> : <>
-          <PresetSetting label="分辨率预设" options={["1080p", "2K", "4K", "9:16", "21:9"]} active={getResolutionPreset(state.settings.ChartRenderWidth, state.settings.ChartRenderHeight)} onSelect={(preset) => onSettings(resolutionPresets[preset])} disabled={settingsLocked} />
-          <SettingNumber label="视频宽度" value={state.settings.ChartRenderWidth} min={16} max={7680} step={2} onChange={(value) => onSettings({ ChartRenderWidth: value })} suffix="px" disabled={settingsLocked} />
-          <SettingNumber label="视频高度" value={state.settings.ChartRenderHeight} min={16} max={4320} step={2} onChange={(value) => onSettings({ ChartRenderHeight: value })} suffix="px" disabled={settingsLocked} />
-        </>}
+        {isGameView ? <InfoBlock text="游戏画面模式会在后台按下面设置的分辨率渲染完整画面（包括界面），可以超过显示器分辨率；屏幕上只显示预览。分辨率的宽高比建议和游戏窗口一致，否则界面元素的位置可能与游戏中略有不同。" /> : null}
+        <PresetSetting label="分辨率预设" options={["1080p", "2K", "4K", "9:16", "21:9"]} active={getResolutionPreset(state.settings.ChartRenderWidth, state.settings.ChartRenderHeight)} onSelect={(preset) => onSettings(resolutionPresets[preset])} disabled={settingsLocked} />
+        <SettingNumber label="视频宽度" value={state.settings.ChartRenderWidth} min={16} max={7680} step={2} onChange={(value) => onSettings({ ChartRenderWidth: value })} suffix="px" disabled={settingsLocked} />
+        <SettingNumber label="视频高度" value={state.settings.ChartRenderHeight} min={16} max={4320} step={2} onChange={(value) => onSettings({ ChartRenderHeight: value })} suffix="px" disabled={settingsLocked} />
         <PresetSetting label="帧率预设" options={["30", "60", "120"]} active={String(state.settings.ChartRenderFps)} onSelect={(preset) => onSettings({ ChartRenderFps: Number(preset) })} disabled={settingsLocked} />
         <SettingNumber label="帧率" value={state.settings.ChartRenderFps} min={1} max={240} step={1} onChange={(value) => onSettings({ ChartRenderFps: value })} suffix="帧/秒" disabled={settingsLocked} />
         <SettingNumber label="结束后延迟停止" value={state.settings.ChartRenderCompletionTailSeconds} min={0} step={0.1} onChange={(value) => onSettings({ ChartRenderCompletionTailSeconds: value })} suffix="秒" disabled={settingsLocked} />
