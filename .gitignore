@@ -55,6 +55,7 @@ Desktop.ini
 
 ThirdParty/FFmpeg/ffmpeg.exe
 ThirdParty/FFmpeg/FFmpeg-*.txt
+ThirdParty/FFmpeg/GPL-3.0.txt
 
 # Per-machine build settings
 Local.props
