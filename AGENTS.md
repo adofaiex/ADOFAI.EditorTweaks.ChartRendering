@@ -77,9 +77,12 @@ Doc/                          技术文档（Api/ 为公共 API 说明）
 
 ### FFmpeg
 
-- 自带的是 gyan.dev 的 essentials 版，不含 libsvtav1、VVC（H.266）等。显卡编码器（NVENC/AMF/QSV）是否能用取决于用户的硬件和驱动。使用任何编码器前都要通过 `ChartEncoderCapabilities.IsAvailable` 探测，并准备退路。新增编码器时，把它加进 `ChartEncoderCapabilities.KnownEncoders`，同时更新设置页的 `encoderLabels`、`encoderOrder` 和 `predictEncoder`。
-- 参数取值范围以实测为准。例如这版的 libaom `cpu-used` 只接受 0–8，文档写的 0–10 不适用。
-- 容器限制：MP4 不能装 ProRes，MOV 不能装 FLAC。
+- 自带的是 gyan.dev 的 **9.0.2 full build**（约 228 MB），含 `libsvtav1`、`libvvenc`、`libaom-av1` 等；`EnsureFfmpeg.ps1` 用 `curl.exe` 下载、`tar.exe` 解压 `.7z`，发现旧的 essentials 会自动替换。不要改回 essentials，否则 AV1 只能落到很慢的 libaom，H.266 也会消失。显卡编码器（NVENC/AMF/QSV）是否能用取决于用户的硬件和驱动。使用任何编码器前都要通过 `ChartEncoderCapabilities.IsAvailable` 探测，并准备退路。新增编码器时，把它加进 `ChartEncoderCapabilities.KnownEncoders`，同时更新设置页的 `encoderLabels`、`encoderOrder` 和 `predictEncoder`。
+- AV1：`av1_nvenc` 需要 RTX 40 系或更新；更老的 NVIDIA 显卡会走 `libsvtav1`（full build 自带），再退到 `libaom-av1`。
+- H.266/VVC：只有 `libvvenc`（CPU），只接受 10-bit 输入，1080p60 大约每秒数帧，播放器支持很差。设置页必须保持“实验性、不推荐”的提示。它没有 CBR 模式，`ConstantBitrate` 要退回 VBR。
+- 恒定比特率：NVENC 是真正的 `-rc cbr`；x264/x265 是受 VBV 限制的近似 CBR（MP4 不支持 HRD filler）；SVT-AV1 需要 `rc=2:pred-struct=1` 低延迟模式；libaom 用 `minrate=maxrate`；ProRes 不适用。不要把它说成逐段完全恒定。
+- 参数取值范围以实测为准。例如这版的 libaom `cpu-used` 只接受 0–8，文档写的 0–10 不适用；libvvenc 只接受 `yuv420p10le` 输入。
+- 容器限制：MP4 不能装 ProRes，MOV 不能装 FLAC。VVC 的 MP4/MKV/MOV 都能用，MP4 自动写 `vvc1` 标签。
 - 合成先写 `.part`，成功后再改名。
 
 ### 游戏版本
