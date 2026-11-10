@@ -83,6 +83,12 @@ export function createMockState(): WebUiState {
     })),
     patchSummary: { active: 2, total: 2, registrationError: false },
     settings,
+    encoders: {
+      status: "ready",
+      detectedAt: "2026-11-10 20:00",
+      gpu: "NVIDIA GeForce RTX 3070",
+      results: { h264_nvenc: true, hevc_nvenc: true, av1_nvenc: false, libx264: true, libx265: true, libsvtav1: false, "libaom-av1": true, prores_aw: true },
+    },
     render: {
       active: false,
       taskId: "",

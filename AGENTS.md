@@ -31,7 +31,8 @@ src/
     ChartOffscreenGameViewCapture.cs  游戏画面模式（离屏渲染）
     ChartGameViewFrameCapture.cs      游戏画面模式的退回方案（截屏）
     ChartRenderFramePipeline.cs GPU 回读 -> 编码队列
-    FfmpegEncoder.cs            FFmpeg 视频编码、合成音频、编码器探测
+    FfmpegEncoder.cs            FFmpeg 视频编码、合成音频
+    ChartEncoderCapabilities.cs 编码器检测：后台探测、保存结果、按显卡/FFmpeg 变化自动重测
     ChartUnityAudioCapture.cs   AudioRenderer 离线录音
     ChartRenderAudioBuffer.cs   渲染时切换 DSP 缓冲（会丢运行时音频，见下）
     ChartRenderUnscaledTime.cs  修正动画速度
@@ -76,7 +77,7 @@ Doc/                          技术文档（Api/ 为公共 API 说明）
 
 ### FFmpeg
 
-- 自带的是 gyan.dev 的 essentials 版，不含 libsvtav1、VVC（H.266）等。显卡编码器（NVENC/AMF/QSV）是否能用取决于用户的硬件和驱动。使用任何编码器前先探测（`IsEncoderAvailable`），并准备退路。
+- 自带的是 gyan.dev 的 essentials 版，不含 libsvtav1、VVC（H.266）等。显卡编码器（NVENC/AMF/QSV）是否能用取决于用户的硬件和驱动。使用任何编码器前都要通过 `ChartEncoderCapabilities.IsAvailable` 探测，并准备退路。新增编码器时，把它加进 `ChartEncoderCapabilities.KnownEncoders`，同时更新设置页的 `encoderLabels`、`encoderOrder` 和 `predictEncoder`。
 - 参数取值范围以实测为准。例如这版的 libaom `cpu-used` 只接受 0–8，文档写的 0–10 不适用。
 - 容器限制：MP4 不能装 ProRes，MOV 不能装 FLAC。
 - 合成先写 `.part`，成功后再改名。

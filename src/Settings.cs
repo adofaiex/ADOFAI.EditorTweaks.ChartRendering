@@ -31,6 +31,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering
         // Settings page shows the detailed encoder settings (encoder + preset) instead of the simple
         // encoder mode. The two presets above are only used while this is on.
         public bool ChartRenderDetailedEncoderSettings;
+        // Encoder detection results (ChartEncoderCapabilities), not a preference: kept by "reset to
+        // defaults", and re-detected automatically when the GPU or FFmpeg changes.
+        public string EncoderCapabilitiesCache = string.Empty;
         public string ChartRenderCaptureFormat = ChartRenderOptionValues.CaptureRgba;
         public string ChartRenderCaptureSource = ChartRenderOptionValues.CaptureSourceCamera;
         public string ChartRenderPreviewMode = ChartRenderOptionValues.PreviewFull;
@@ -99,6 +102,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             ChartRenderExportDirectory = ChartRenderExportDirectory ?? string.Empty;
             ChartRenderCustomMuxArgs = ChartRenderCustomMuxArgs ?? string.Empty;
             FfmpegCustomPath = (FfmpegCustomPath ?? string.Empty).Trim().Trim('"');
+            EncoderCapabilitiesCache = EncoderCapabilitiesCache ?? string.Empty;
         }
 
         public void ResetAllDefaults(UnityModManager.ModEntry modEntry)

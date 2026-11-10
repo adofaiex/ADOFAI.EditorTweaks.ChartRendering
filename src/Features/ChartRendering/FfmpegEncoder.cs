@@ -10,13 +10,6 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 {
     internal sealed class FfmpegEncoder : IDisposable
     {
-        private static readonly object EncoderProbeLock = new object();
-        private static bool? nvencAvailable;
-        private static bool? hevcNvencAvailable;
-        private static bool? av1NvencAvailable;
-        private static bool? svtAv1Available;
-        private static bool? aomAv1Available;
-        private static string probedFfmpegPath = string.Empty;
 
         private readonly string ffmpegPath;
         private readonly string tempVideoPath;
@@ -489,7 +482,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         private string GetH264EncoderArguments()
         {
-            if (!ForcesCpuEncoder() && IsEncoderAvailable(ref nvencAvailable, "h264_nvenc"))
+            if (!ForcesCpuEncoder() && IsEncoderAvailable("h264_nvenc"))
             {
                 string nvencPreset = GetNvencPreset();
                 EncoderName = "h264_nvenc " + nvencPreset;
@@ -505,7 +498,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         private string GetHevcEncoderArguments()
         {
-            if (!ForcesCpuEncoder() && IsEncoderAvailable(ref hevcNvencAvailable, "hevc_nvenc"))
+            if (!ForcesCpuEncoder() && IsEncoderAvailable("hevc_nvenc"))
             {
                 string nvencPreset = GetNvencPreset();
                 EncoderName = "hevc_nvenc " + nvencPreset;
@@ -525,7 +518,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         // provides it, since it is much faster.
         private string GetAv1EncoderArguments()
         {
-            if (!ForcesCpuEncoder() && IsEncoderAvailable(ref av1NvencAvailable, "av1_nvenc"))
+            if (!ForcesCpuEncoder() && IsEncoderAvailable("av1_nvenc"))
             {
                 string nvencPreset = GetNvencPreset();
                 EncoderName = "av1_nvenc " + nvencPreset;
@@ -533,7 +526,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 return "-c:v av1_nvenc -preset " + nvencPreset + " -tune " + GetNvencTune() + " " + GetNvencBitrateArguments(av1: true) + " -g " + GetGopSize();
             }
 
-            if (IsEncoderAvailable(ref svtAv1Available, "libsvtav1"))
+            if (IsEncoderAvailable("libsvtav1"))
             {
                 int svtPreset = GetSvtAv1Preset();
                 EncoderName = "libsvtav1 preset " + svtPreset;
@@ -543,7 +536,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 return "-c:v libsvtav1 -preset " + svtPreset + " " + rate + " -g " + GetGopSize();
             }
 
-            if (IsEncoderAvailable(ref aomAv1Available, "libaom-av1"))
+            if (IsEncoderAvailable("libaom-av1"))
             {
                 int cpuUsed = GetAomCpuUsed();
                 string usage = cpuUsed >= 5 ? "realtime" : "good";
@@ -569,7 +562,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         private string GetCustomVideoEncoderArguments()
         {
-            if (!ForcesCustomCpuEncoder() && IsEncoderAvailable(ref nvencAvailable, "h264_nvenc"))
+            if (!ForcesCustomCpuEncoder() && IsEncoderAvailable("h264_nvenc"))
             {
                 EncoderName = "h264_nvenc p1";
                 Main.Log("Chart renderer using custom compatibility h264_nvenc.");
@@ -722,72 +715,12 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 + " -bufsize " + buffer + "M";
         }
 
-        // Probe results are cached per FFmpeg executable: a custom FFmpeg can support other encoders.
-        private bool IsEncoderAvailable(ref bool? cached, string encoder)
+        // Live probe once per game session, shared with the settings page's encoder detection.
+        private bool IsEncoderAvailable(string encoder)
         {
-            lock (EncoderProbeLock)
-            {
-                if (!string.Equals(probedFfmpegPath, ffmpegPath, StringComparison.OrdinalIgnoreCase))
-                {
-                    probedFfmpegPath = ffmpegPath;
-                    nvencAvailable = null;
-                    hevcNvencAvailable = null;
-                    av1NvencAvailable = null;
-                    svtAv1Available = null;
-                    aomAv1Available = null;
-                }
-
-                if (!cached.HasValue)
-                {
-                    cached = ProbeEncoder(encoder);
-                    ChartRenderDiagnostics.Log("Encoder probe " + encoder + ": " + (cached.Value ? "available" : "unavailable") + ".");
-                }
-
-                return cached.Value;
-            }
-        }
-
-        private bool ProbeEncoder(string encoder)
-        {
-            try
-            {
-                ProcessStartInfo info = new ProcessStartInfo
-                {
-                    FileName = ffmpegPath,
-                    Arguments = "-hide_banner -loglevel error -y -f lavfi -i color=size=256x256:rate=1:duration=0.1 -c:v " + encoder + " -frames:v 1 -f null -",
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardError = true,
-                    RedirectStandardOutput = true
-                };
-
-                using (Process? probe = Process.Start(info))
-                {
-                    if (probe == null)
-                    {
-                        return false;
-                    }
-
-                    if (!probe.WaitForExit(5000))
-                    {
-                        try
-                        {
-                            probe.Kill();
-                        }
-                        catch
-                        {
-                        }
-
-                        return false;
-                    }
-
-                    return probe.ExitCode == 0;
-                }
-            }
-            catch
-            {
-                return false;
-            }
+            bool available = ChartEncoderCapabilities.IsAvailable(ffmpegPath, encoder);
+            ChartRenderDiagnostics.Log("Encoder probe " + encoder + ": " + (available ? "available" : "unavailable") + ".");
+            return available;
         }
 
         private sealed class QueuedFrame

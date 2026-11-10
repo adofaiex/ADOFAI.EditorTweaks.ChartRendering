@@ -39,6 +39,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
         private string pageUrl = string.Empty;
         private string latestStateJson = "{}";
         private ChartRenderTask? renderTask;
+        private int lastEncoderChangeCount = -1;
         private Coroutine? openSettingsPageRoutine;
         private float nextStateBroadcastTime;
         private bool stateDirty = true;
@@ -92,6 +93,15 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             {
                 ChartRenderApi.CurrentTask?.Cancel();
                 Main.Log("[WebUI] Render canceled by Escape.");
+            }
+
+            // Encoder detection runs on a background thread; its results are saved and shown from here.
+            ChartEncoderCapabilities.FlushIfDirty();
+            int encoderChanges = ChartEncoderCapabilities.ChangeCount;
+            if (encoderChanges != lastEncoderChangeCount)
+            {
+                lastEncoderChangeCount = encoderChanges;
+                stateDirty = true;
             }
 
             bool renderStateNeedsBroadcast = renderTask != null && !renderTask.IsTerminal;
@@ -306,6 +316,19 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                     return;
                 case "/api/render/cancel":
                     CancelRenderFromRequestThread(context);
+                    return;
+                case "/api/encoders/detect":
+                    ExecuteOnMain(() =>
+                    {
+                        // Probing starts FFmpeg with every encoder; not while a render is using the GPU.
+                        if (ChartRenderService.IsActive)
+                        {
+                            return new CommandResult(409, Error("渲染进行中，请在渲染结束后再重新检测。"));
+                        }
+
+                        ChartEncoderCapabilities.StartDetection();
+                        return StateResult();
+                    }, context);
                     return;
                 default:
                     WriteJson(context, 404, Error("Unknown WebUI API route."));
@@ -569,6 +592,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
         {
             Main.Settings.Normalize();
             Main.Settings.Save(Main.Mod!);
+            // A changed custom FFmpeg path changes which encoders are available.
+            ChartEncoderCapabilities.EnsureCurrent();
             stateDirty = true;
             PublishState();
         }

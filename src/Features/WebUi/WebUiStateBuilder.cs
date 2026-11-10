@@ -64,6 +64,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                     ["registrationError"] = statuses.Count == 0
                 },
                 ["settings"] = BuildSettings(Main.Settings),
+                ["encoders"] = Features.ChartRendering.ChartEncoderCapabilities.BuildState(),
                 ["render"] = BuildRenderState(renderTask)
             };
         }

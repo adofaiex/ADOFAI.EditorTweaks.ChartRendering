@@ -89,4 +89,14 @@ export interface WebUiState {
   };
   settings: SettingsState;
   render: RenderState;
+  encoders: EncoderState;
+}
+
+// Encoder detection (ChartEncoderCapabilities). results maps an FFmpeg encoder name to whether it
+// works on this computer; it is empty until the first detection finishes.
+export interface EncoderState {
+  status: "unknown" | "detecting" | "ready";
+  detectedAt: string;
+  gpu: string;
+  results: Record<string, boolean>;
 }

@@ -24,7 +24,7 @@ import {
 import React from "react";
 import { createPortal } from "react-dom";
 import { createEventSource, createMockState, isLocalPreview, localDocumentUrl, postJson } from "./api";
-import type { PageKey, PatchStatus, RenderState, SettingsState, WebUiState } from "./types";
+import type { EncoderState, PageKey, PatchStatus, RenderState, SettingsState, WebUiState } from "./types";
 
 const pageItems: Array<{ key: PageKey; label: string; description: string; icon: React.ReactNode }> = [
   { key: "overview", label: "总览", description: "兼容性与全部功能状态", icon: <IconApps /> },
@@ -457,6 +457,8 @@ function Overview({ state, onNavigate, onSettings, onAction, disabled }: { state
         </div>
       </section>
 
+      <EncoderDetection encoders={state.encoders} disabled={disabled} onDetect={() => onAction("/api/encoders/detect")} />
+
       <section className="section-block angular-panel global-settings">
         <div className="settings-note">本 Mod 只提供谱面视频渲染。编辑器优化和压缩包处理分别由独立 Mod 提供。</div>
       </section>
@@ -479,9 +481,7 @@ function RenderPage({ state, offline, onSettings, onOpenDocument, onStart, onCan
     ? "编码器为“自定义参数”时固定使用 H.264，视频编码格式的选择不会生效。"
     : videoCodec === "prores"
       ? "ProRes 文件非常大，适合导入剪辑软件；只能保存为 MOV，音频不能用 FLAC。"
-      : videoCodec === "av1"
-        ? "AV1 硬件编码需要 NVIDIA RTX 40 系或更新的显卡；不支持时改用 CPU 编码，速度会明显变慢。"
-        : null;
+      : null;
   // Settings saved before these rules existed may still pair ProRes with MP4 or MOV with FLAC; the
   // fields show what the render will really use.
   const isProRes = videoCodec === "prores";
@@ -504,6 +504,18 @@ function RenderPage({ state, offline, onSettings, onOpenDocument, onStart, onCan
     : { ChartRenderDetailedEncoderSettings: false, ...(encoderMode === "custom" ? { ChartRenderEncoderMode: "auto-balanced" } : {}) });
   const setEncoderDevice = (device: string) => onSettings({ ChartRenderEncoderMode: device === "cpu" ? "cpu-compatibility" : device === "custom" ? "custom" : "auto-balanced" });
   const slowCpuPresets = ["medium", "slow", "slower", "veryslow"];
+  // What this computer will really encode with, from the encoder detection.
+  const detected = Object.keys(state.encoders.results).length > 0;
+  const predictedEncoder = predictEncoder(state.settings, state.encoders);
+  const hasNvenc = nvencEncoders.some((name) => state.encoders.results[name]);
+  const wantsGpu = encoderMode !== "cpu-compatibility" && encoderMode !== "custom" && !isProRes;
+  const fellBackToCpu = predictedEncoder !== null && predictedEncoder !== "none" && wantsGpu && !nvencEncoders.includes(predictedEncoder);
+  const encoderNote = predictedEncoder === null
+    ? (state.encoders.status === "detecting" ? "正在检测这台电脑能用的编码器…" : null)
+    : predictedEncoder === "none"
+      ? "这台电脑没有可用的 AV1 编码器，渲染会失败，请换一种视频编码格式。"
+      : `这台电脑将使用：${encoderLabels[predictedEncoder] ?? predictedEncoder}${fellBackToCpu ? "。显卡不支持这种编码格式，会改用 CPU 编码，速度明显变慢。" : "。"}`;
+  const disabledEncoderDevices = detected && !hasNvenc ? { gpu: "没有检测到可用的 NVIDIA 显卡编码" } : undefined;
   const presetNote = !detailedEncoder
     ? null
     : isProRes && encoderDevice !== "custom"
@@ -553,6 +565,7 @@ function RenderPage({ state, offline, onSettings, onOpenDocument, onStart, onCan
         <SettingSelect label="视频输出格式" group="ChartRenderVideoFormat" value={shownVideoFormat} options={["mp4", "mkv", "mov"]} disabledOptions={disabledVideoFormats} onChange={(value) => onSettings({ ChartRenderVideoFormat: value })} disabled={settingsLocked} />
         <SettingSelect label="视频编码格式" group="ChartRenderVideoCodec" value={state.settings.ChartRenderVideoCodec} options={["h264", "hevc", "av1", "prores"]} onChange={(value) => onSettings({ ChartRenderVideoCodec: value })} disabled={settingsLocked} />
         {codecNote ? <InfoBlock text={codecNote} /> : null}
+        {encoderNote ? <InfoBlock text={encoderNote} /> : null}
         <SettingSwitch label="渲染时显示判定文字" description="控制成品视频中是否显示 Perfect、Early、Late 等判定文字。" value={state.settings.ChartRenderShowHitJudgments} onChange={(value) => onSettings({ ChartRenderShowHitJudgments: value })} disabled={settingsLocked} />
         <SettingSwitch label="仅渲染选中段落" description="开启后需要在编辑器中框选至少两个连续砖块。" value={state.settings.ChartRenderUseSelectedRange} onChange={(value) => onSettings({ ChartRenderUseSelectedRange: value })} disabled={settingsLocked} />
       </div>
@@ -563,7 +576,7 @@ function RenderPage({ state, offline, onSettings, onOpenDocument, onStart, onCan
           <SettingText label="工作区目录" value={state.settings.ChartRenderWorkspaceDirectory} onChange={(value) => onSettings({ ChartRenderWorkspaceDirectory: value })} disabled={settingsLocked} />
           <SettingSwitch label="详细编码设置" description="关闭时只选编码档位；开启后可以指定编码器和它的速度预设。" value={detailedEncoder} onChange={setDetailedEncoder} disabled={settingsLocked} />
           {detailedEncoder ? <>
-            <SettingSelect label="编码器" group="ChartRenderEncoderDevice" value={encoderDevice} options={["gpu", "cpu", "custom"]} onChange={setEncoderDevice} disabled={settingsLocked} />
+            <SettingSelect label="编码器" group="ChartRenderEncoderDevice" value={encoderDevice} options={["gpu", "cpu", "custom"]} disabledOptions={disabledEncoderDevices} onChange={setEncoderDevice} disabled={settingsLocked} />
             {isProRes && encoderDevice !== "custom" ? null
               : encoderDevice === "gpu" ? <SettingSelect label="显卡编码预设" group="ChartRenderHardwarePreset" value={shownHardwarePreset} options={["p1", "p2", "p3", "p4", "p5", "p6", "p7"]} onChange={(value) => onSettings({ ChartRenderHardwarePreset: value })} disabled={settingsLocked} />
               : encoderDevice === "cpu" ? <SettingSelect label="CPU 编码预设" group="ChartRenderCpuPreset" value={shownCpuPreset} options={["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"]} onChange={(value) => onSettings({ ChartRenderCpuPreset: value })} disabled={settingsLocked} />
@@ -738,6 +751,58 @@ function CustomSelect({ group, value, options, onChange, disabled, disabledOptio
 }
 
 function InfoBlock({ text }: { text: string }) { return <div className="info-block"><IconInfoCircle /><span>{text}</span></div>; }
+
+const encoderLabels: Record<string, string> = {
+  h264_nvenc: "H.264 显卡编码（NVIDIA）",
+  hevc_nvenc: "HEVC 显卡编码（NVIDIA）",
+  av1_nvenc: "AV1 显卡编码（NVIDIA，需要 RTX 40 系或更新）",
+  libx264: "H.264 CPU 编码（x264）",
+  libx265: "HEVC CPU 编码（x265）",
+  libsvtav1: "AV1 CPU 编码（SVT-AV1，较快）",
+  "libaom-av1": "AV1 CPU 编码（libaom，很慢）",
+  prores_aw: "ProRes 422 HQ",
+};
+const encoderOrder = ["h264_nvenc", "hevc_nvenc", "av1_nvenc", "libx264", "libx265", "libsvtav1", "libaom-av1", "prores_aw"];
+const nvencEncoders = ["h264_nvenc", "hevc_nvenc", "av1_nvenc"];
+
+// The encoder FfmpegEncoder will pick for these settings on this computer (same order of fallbacks),
+// or null when nothing is detected yet. "none" when no AV1 encoder works at all.
+function predictEncoder(settings: SettingsState, encoders: EncoderState): string | null {
+  const results = encoders.results;
+  if (Object.keys(results).length === 0) return null;
+  const mode = settings.ChartRenderEncoderMode.toLowerCase();
+  const forceCpu = mode === "cpu-compatibility";
+  if (mode === "custom") {
+    const preset = settings.ChartRenderPreset.trim().toLowerCase();
+    const customCpu = preset === "cpu" || preset === "x264" || preset.startsWith("x264:");
+    return !customCpu && results.h264_nvenc ? "h264_nvenc" : "libx264";
+  }
+
+  switch (settings.ChartRenderVideoCodec.toLowerCase()) {
+    case "hevc": return !forceCpu && results.hevc_nvenc ? "hevc_nvenc" : "libx265";
+    case "av1": return !forceCpu && results.av1_nvenc ? "av1_nvenc" : results.libsvtav1 ? "libsvtav1" : results["libaom-av1"] ? "libaom-av1" : "none";
+    case "prores": return "prores_aw";
+    default: return !forceCpu && results.h264_nvenc ? "h264_nvenc" : "libx264";
+  }
+}
+
+function EncoderDetection({ encoders, disabled, onDetect }: { encoders: EncoderState; disabled: boolean; onDetect: () => void }) {
+  const detecting = encoders.status === "detecting";
+  const hasResults = Object.keys(encoders.results).length > 0;
+  const hint = detecting ? "正在检测…" : encoders.status === "ready" ? `检测于 ${encoders.detectedAt}` : "尚未检测";
+  return <section className="section-block">
+    <SectionHeading title="编码器检测" hint={hint} />
+    <div className="settings-note">检测这台电脑能用哪些视频编码器。首次运行、更换显卡或更换 FFmpeg 后会自动检测；更新显卡驱动后可以手动重新检测。{encoders.gpu ? `当前显卡：${encoders.gpu}。` : ""}</div>
+    {hasResults ? <div className="patch-list">
+      {encoderOrder.filter((name) => name in encoders.results).map((name) => <div className="patch-row" key={name}>
+        <span className={`patch-icon ${encoders.results[name] ? "active" : "inactive"}`}>{encoders.results[name] ? <IconCheckCircle /> : <IconCloseCircle />}</span>
+        <div className="patch-name"><strong>{encoderLabels[name] ?? name}</strong><span>{name}</span></div>
+        <span className={`patch-state ${encoders.results[name] ? "active" : "inactive"}`}><span className="patch-state-dot" />{encoders.results[name] ? "可用" : "不可用"}</span>
+      </div>)}
+    </div> : null}
+    <div className="page-actions"><Button className="secondary-button" icon={<IconRefresh />} disabled={disabled || detecting} onClick={onDetect}>{detecting ? "正在检测…" : "重新检测"}</Button></div>
+  </section>;
+}
 function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) { return <div className="metric"><span className="metric-icon">{icon}</span><span><small>{label}</small><strong>{value}</strong></span></div>; }
 function DetailLine({ label, value }: { label: string; value: string }) { return <div className="detail-line"><span>{label}</span><strong title={value}>{value}</strong></div>; }
 
