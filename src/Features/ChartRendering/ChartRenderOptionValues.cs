@@ -31,6 +31,19 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         // "auto" = follow the encoder mode (the behavior before these presets existed).
         public const string PresetFollowEncoderMode = "auto";
 
+        public const string HardwareEncoderAuto = "auto";
+        public const string HardwareEncoderNvidia = "nvidia";
+        public const string HardwareEncoderIntel = "intel";
+        public const string HardwareEncoderAmd = "amd";
+
+        public static readonly string[] HardwareEncoders =
+        {
+            HardwareEncoderAuto,
+            HardwareEncoderNvidia,
+            HardwareEncoderIntel,
+            HardwareEncoderAmd
+        };
+
         public static readonly string[] HardwarePresets = { PresetFollowEncoderMode, "p1", "p2", "p3", "p4", "p5", "p6", "p7" };
 
         // Same order as ChartRenderCpuPreset, fastest first.
@@ -38,6 +51,23 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         {
             PresetFollowEncoderMode, "ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"
         };
+
+        public static string NormalizeHardwareEncoder(string? value)
+        {
+            string lowered = (value ?? string.Empty).Trim().ToLowerInvariant();
+            return Array.IndexOf(HardwareEncoders, lowered) >= 0 ? lowered : HardwareEncoderAuto;
+        }
+
+        public static ChartRenderHardwareEncoder ParseHardwareEncoder(string? value)
+        {
+            return (ChartRenderHardwareEncoder)Math.Max(0, Array.IndexOf(HardwareEncoders, NormalizeHardwareEncoder(value)));
+        }
+
+        public static string FormatHardwareEncoder(ChartRenderHardwareEncoder encoder)
+        {
+            int index = (int)encoder;
+            return index >= 0 && index < HardwareEncoders.Length ? HardwareEncoders[index] : HardwareEncoderAuto;
+        }
 
         public static string NormalizeHardwarePreset(string? value)
         {

@@ -28,6 +28,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering
         public bool ChartRenderConstantBitrate;
         public string ChartRenderPreset = "veryfast";
         public string ChartRenderEncoderMode = ChartRenderOptionValues.EncoderAutoBalanced;
+        // Auto prefers NVENC, then AMD AMF, then Intel QSV; the CPU encoder is the final fallback.
+        public string ChartRenderHardwareEncoder = ChartRenderOptionValues.HardwareEncoderAuto;
         public string ChartRenderHardwarePreset = ChartRenderOptionValues.PresetFollowEncoderMode;
         public string ChartRenderCpuPreset = ChartRenderOptionValues.PresetFollowEncoderMode;
         // Settings page shows the detailed encoder settings (encoder + preset) instead of the simple
@@ -84,6 +86,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             ChartRenderBitrateMbps = Mathf.Clamp(ChartRenderBitrateMbps, ChartRenderBitratePresets.AutoBitrateMbps, ChartRenderBitratePresets.MaxBitrateMbps);
             ChartRenderPreset = string.IsNullOrWhiteSpace(ChartRenderPreset) ? "veryfast" : ChartRenderPreset.Trim();
             ChartRenderEncoderMode = ChartRenderOptionValues.NormalizeEncoderMode(ChartRenderEncoderMode);
+            ChartRenderHardwareEncoder = ChartRenderOptionValues.NormalizeHardwareEncoder(ChartRenderHardwareEncoder);
             ChartRenderHardwarePreset = ChartRenderOptionValues.NormalizeHardwarePreset(ChartRenderHardwarePreset);
             ChartRenderCpuPreset = ChartRenderOptionValues.NormalizeCpuPreset(ChartRenderCpuPreset);
             // The custom encoder mode only exists in the detailed encoder view; settings saved before
@@ -122,6 +125,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             ChartRenderConstantBitrate = false;
             ChartRenderPreset = "veryfast";
             ChartRenderEncoderMode = ChartRenderOptionValues.EncoderAutoBalanced;
+            ChartRenderHardwareEncoder = ChartRenderOptionValues.HardwareEncoderAuto;
             ChartRenderHardwarePreset = ChartRenderOptionValues.PresetFollowEncoderMode;
             ChartRenderCpuPreset = ChartRenderOptionValues.PresetFollowEncoderMode;
             ChartRenderDetailedEncoderSettings = false;

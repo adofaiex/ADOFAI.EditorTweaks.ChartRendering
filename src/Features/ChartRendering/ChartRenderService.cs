@@ -149,6 +149,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 VideoCodec = ChartRenderOptionValues.ParseVideoCodec(source.ChartRenderVideoCodec),
                 AudioFormat = ParseAudioFormat(source.ChartRenderAudioFormat),
                 EncoderMode = ParseEncoderMode(source.ChartRenderEncoderMode),
+                HardwareEncoder = ChartRenderOptionValues.ParseHardwareEncoder(source.ChartRenderHardwareEncoder),
                 // The presets belong to the detailed encoder settings; in the simple view the encoder
                 // mode alone decides, so presets left over from the detailed view do not apply.
                 HardwarePreset = source.ChartRenderDetailedEncoderSettings
@@ -370,6 +371,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 || !Enum.IsDefined(typeof(ChartRenderVideoCodec), request.VideoCodec)
                 || !Enum.IsDefined(typeof(ChartRenderAudioFormat), request.AudioFormat)
                 || !Enum.IsDefined(typeof(ChartRenderEncoderMode), request.EncoderMode)
+                || !Enum.IsDefined(typeof(ChartRenderHardwareEncoder), request.HardwareEncoder)
                 || !Enum.IsDefined(typeof(ChartRenderHardwarePreset), request.HardwarePreset)
                 || !Enum.IsDefined(typeof(ChartRenderCpuPreset), request.CpuPreset)
                 || !Enum.IsDefined(typeof(ChartRenderReadbackFormat), request.ReadbackFormat)
@@ -512,6 +514,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 ChartRenderConstantBitrate = request.ConstantBitrate,
                 ChartRenderPreset = request.CustomEncoderPreset,
                 ChartRenderEncoderMode = ToInternal(request.EncoderMode),
+                ChartRenderHardwareEncoder = ChartRenderOptionValues.FormatHardwareEncoder(request.HardwareEncoder),
                 ChartRenderHardwarePreset = ChartRenderOptionValues.FormatHardwarePreset(request.HardwarePreset),
                 ChartRenderCpuPreset = ChartRenderOptionValues.FormatCpuPreset(request.CpuPreset),
                 ChartRenderCaptureFormat = request.ReadbackFormat == ChartRenderReadbackFormat.Bgra

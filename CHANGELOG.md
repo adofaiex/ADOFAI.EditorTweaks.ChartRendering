@@ -11,15 +11,16 @@
 - **视频编码格式**：H.264、HEVC/H.265、AV1、ProRes 422 HQ。显卡支持时使用 NVENC，否则回退 CPU 编码；HEVC 在 MP4/MOV 中使用 `hvc1` 标签，ProRes 使用 MOV。
 - **游戏画面离屏渲染**：游戏画面模式把摄像机和屏幕空间画布重定向到离屏纹理，可按设置输出高于显示器的分辨率，并包含游戏内界面；屏幕上显示带黑边的预览。
 - **CRF 恒定质量**：码率为“自动”时只由 CRF 控制（NVENC 恒定 QP），不再受编码级别码率上限约束。
-- **显卡/CPU 编码预设**：NVENC p1–p7；x264/x265 ultrafast–veryslow；AV1 CPU 编码器按同等速度换算。
-- **编码器检测**：启动时在后台探测这台电脑能用的编码器，结果显示在总览页和渲染设置里；显卡、驱动或 FFmpeg 变化后自动重测，也可以手动重新检测。
+- **AMD / Intel 硬件编码**：新增 AMD AMF（`h264_amf` / `hevc_amf` / `av1_amf`）和 Intel QSV（`h264_qsv` / `hevc_qsv` / `av1_qsv`），与 NVIDIA NVENC 一起支持独显和核显。默认按 NVENC → AMF → QSV 顺序选择，也可以手动指定厂商；不可用时回退 CPU。
+- **显卡/CPU 编码预设**：NVENC p1–p7；x264/x265 ultrafast–veryslow；AMD/Intel 硬件编码和 AV1 CPU 编码器按同等速度换算。
+- **编码器检测**：启动时在后台探测这台电脑能用的 NVIDIA / AMD / Intel 硬件编码器和 CPU 编码器，结果显示在总览页和渲染设置里；显卡、驱动或 FFmpeg 变化后自动重测，也可以手动重新检测。
 - **恒定比特率（CBR）**：按填写的视频码率输出，码率为 0 时使用推荐码率，CRF 不再生效。NVENC 使用真正的 CBR，CPU 编码器使用受 VBV 限制的近似 CBR。
 - **H.266/VVC**：实验性编码格式，使用 `libvvenc`。只有 CPU 编码，输出 10-bit，支持 MP4/MKV/MOV；设置页标记为“实验性、不推荐、仅供尝鲜”。
 - **完整版 FFmpeg**：自带 gyan.dev 9.0.2 full build，新增 `libsvtav1`、`libvvenc` 等编码器，AV1 在 RTX 30 系及更早显卡上不再只能使用很慢的 `libaom-av1`。
 - **渲染日志**：每次渲染单独保存到 `Workspace\Logs\render_*.log`，保留最近 10 份，记录编码器、FFmpeg 参数、内存和歌曲状态。
 - **稳定性**：渲染结束后自动回到编辑器；渲染中关闭游戏会被拦截；网页与游戏断开时显示横幅并提示渲染可能被中断。
 - **自定义 FFmpeg**：支持自定义 `ffmpeg.exe` 路径和自定义合成参数。
-- **公共 API 新增**：`ChartRenderVideoCodec`、`ChartRenderRequest.VideoCodec`、`ChartRenderHardwarePreset`、`ChartRenderCpuPreset`、`ChartRenderVideoCodec.Vvc`、`ChartRenderRequest.ConstantBitrate`。全部向后兼容，默认值保持旧行为。
+- **公共 API 新增**：`ChartRenderVideoCodec`、`ChartRenderRequest.VideoCodec`、`ChartRenderHardwareEncoder`、`ChartRenderHardwarePreset`、`ChartRenderCpuPreset`、`ChartRenderVideoCodec.Vvc`、`ChartRenderRequest.ConstantBitrate`。全部向后兼容，默认值保持旧行为。
 
 ### 优化
 
@@ -54,7 +55,8 @@
 - H.266/VVC 只有 CPU 编码，1080p60 大约每秒数帧，播放器和剪辑软件支持有限；设置页标为实验性、不推荐、仅供尝鲜。它不支持 CBR，开启 CBR 时会自动退回 VBR。
 - ProRes 的码率由 profile 决定，CBR 对它不生效；ProRes 只能保存为 MOV，音频不能用 FLAC。
 - H.264/HEVC 在 MP4 中的 CBR 是受 VBV 限制的近似恒定码率，不是逐段完全不变。
-- AV1 NVENC 需要 RTX 40 系或更新的显卡；更老的 NVIDIA 显卡会使用 CPU 的 `libsvtav1`。
+- AV1 硬件编码需要 NVIDIA RTX 40 系、AMD RDNA 3 或 Intel Arc 及更新的显卡；更老的显卡会回退 CPU 的 `libsvtav1`。
+- AMD AMF / Intel QSV 的可用性取决于显卡、驱动和 FFmpeg 构建；编码器检测失败或编码器启动失败时会回退 CPU。
 - 音频缓冲大于 256 时，渲染会临时切换 DSP 缓冲并重新加载歌曲；其他 mod 自己加载的音效（例如 Creplay 的按键音）可能需要重进谱面才能恢复。
 - full build 的 `ffmpeg.exe` 约 228 MB，安装包会明显变大（Release zip 约 85 MB）。
 

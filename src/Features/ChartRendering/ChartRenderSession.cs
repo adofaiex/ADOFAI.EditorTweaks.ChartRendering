@@ -340,7 +340,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     settings.ChartRenderVideoCodec,
                     settings.ChartRenderHardwarePreset,
                     settings.ChartRenderCpuPreset,
-                    settings.ChartRenderConstantBitrate);
+                    settings.ChartRenderConstantBitrate,
+                    settings.ChartRenderHardwareEncoder);
                 encoder.BeginVideo();
                 EncoderName = encoder.EncoderName;
                 BeginForcedVisualClock();

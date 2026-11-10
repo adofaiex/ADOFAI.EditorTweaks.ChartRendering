@@ -43,6 +43,16 @@ namespace ADOFAI.EditorTweaks.Api.Rendering
         Vvc = 4
     }
 
+    // Added after API v1 shipped. Which hardware encoder to use for H.264/HEVC/AV1. Auto prefers
+    // NVENC, then AMD AMF, then Intel QSV. CPU encoders are used when the requested one is unavailable.
+    public enum ChartRenderHardwareEncoder
+    {
+        Auto = 0,
+        Nvidia = 1,
+        Intel = 2,
+        Amd = 3
+    }
+
     // Added after API v1 shipped. NVENC speed/quality preset; FollowEncoderMode keeps the preset the
     // encoder mode picks (p1/p4/p6), as before. Not used by the Custom encoder mode or ProRes.
     public enum ChartRenderHardwarePreset
@@ -204,6 +214,8 @@ namespace ADOFAI.EditorTweaks.Api.Rendering
 
         public ChartRenderEncoderMode EncoderMode { get; set; } = ChartRenderEncoderMode.AutoBalanced;
 
+        public ChartRenderHardwareEncoder HardwareEncoder { get; set; } = ChartRenderHardwareEncoder.Auto;
+
         public ChartRenderHardwarePreset HardwarePreset { get; set; } = ChartRenderHardwarePreset.FollowEncoderMode;
 
         public ChartRenderCpuPreset CpuPreset { get; set; } = ChartRenderCpuPreset.FollowEncoderMode;
@@ -251,6 +263,7 @@ namespace ADOFAI.EditorTweaks.Api.Rendering
                 VideoCodec = VideoCodec,
                 AudioFormat = AudioFormat,
                 EncoderMode = EncoderMode,
+                HardwareEncoder = HardwareEncoder,
                 HardwarePreset = HardwarePreset,
                 CpuPreset = CpuPreset,
                 ReadbackFormat = ReadbackFormat,

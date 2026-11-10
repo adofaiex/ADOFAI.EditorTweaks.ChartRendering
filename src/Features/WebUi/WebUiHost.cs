@@ -623,6 +623,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                     case "ChartRenderConstantBitrate": settings.ChartRenderConstantBitrate = GetBool(change.Value, settings.ChartRenderConstantBitrate); break;
                     case "ChartRenderPreset": settings.ChartRenderPreset = GetString(change.Value, settings.ChartRenderPreset); break;
                     case "ChartRenderEncoderMode": settings.ChartRenderEncoderMode = GetString(change.Value, settings.ChartRenderEncoderMode); break;
+                    case "ChartRenderHardwareEncoder": settings.ChartRenderHardwareEncoder = GetString(change.Value, settings.ChartRenderHardwareEncoder); break;
                     case "ChartRenderHardwarePreset": settings.ChartRenderHardwarePreset = GetString(change.Value, settings.ChartRenderHardwarePreset); break;
                     case "ChartRenderCpuPreset": settings.ChartRenderCpuPreset = GetString(change.Value, settings.ChartRenderCpuPreset); break;
                     case "ChartRenderDetailedEncoderSettings": settings.ChartRenderDetailedEncoderSettings = GetBool(change.Value, settings.ChartRenderDetailedEncoderSettings); break;

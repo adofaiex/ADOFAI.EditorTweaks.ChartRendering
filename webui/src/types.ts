@@ -38,6 +38,7 @@ export interface SettingsState {
   ChartRenderUseSelectedRange: boolean;
   ChartRenderCustomMuxArgs: string;
   ChartRenderVideoCodec: string;
+  ChartRenderHardwareEncoder: string;
   ChartRenderHardwarePreset: string;
   ChartRenderCpuPreset: string;
   ChartRenderDetailedEncoderSettings: boolean;

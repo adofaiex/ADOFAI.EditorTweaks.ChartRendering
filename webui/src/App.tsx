@@ -84,9 +84,15 @@ const settingLabels: Record<string, Record<string, string>> = {
     prores: "ProRes 422 HQ（剪辑用，体积很大）",
   },
   ChartRenderEncoderDevice: {
-    gpu: "显卡（NVIDIA NVENC）",
+    gpu: "显卡（NVIDIA / AMD / Intel）",
     cpu: "CPU",
     custom: "自定义参数",
+  },
+  ChartRenderHardwareEncoder: {
+    auto: "自动（优先 NVENC → AMF → QSV）",
+    nvidia: "NVIDIA NVENC",
+    intel: "Intel QSV",
+    amd: "AMD AMF",
   },
   ChartRenderHardwarePreset: {
     auto: "跟随编码档位",
@@ -525,18 +531,35 @@ function RenderPage({ state, offline, onSettings, onOpenDocument, onStart, onCan
   // What this computer will really encode with, from the encoder detection.
   const detected = Object.keys(state.encoders.results).length > 0;
   const predictedEncoder = predictEncoder(state.settings, state.encoders);
-  const hasNvenc = nvencEncoders.some((name) => state.encoders.results[name]);
+  const hardwareOptions = hardwareCandidates(videoCodec);
+  const hardwareCodec = !isProRes && !isVvc;
+  const hasHardware = hardwareCodec && hardwareOptions.some((name) => state.encoders.results[name]);
   const wantsGpu = encoderMode !== "cpu-compatibility" && encoderMode !== "custom" && !isProRes && !isVvc;
-  const fellBackToCpu = predictedEncoder !== null && predictedEncoder !== "none" && wantsGpu && !nvencEncoders.includes(predictedEncoder);
+  const selectedHardwareEncoder = state.settings.ChartRenderHardwareEncoder.toLowerCase();
+  const selectedHardwareSuffix = hardwareSuffix(selectedHardwareEncoder);
+  const selectedHardwareAvailable = selectedHardwareEncoder === "auto"
+    ? hasHardware
+    : hardwareOptions.some((name) => name.endsWith(selectedHardwareSuffix) && state.encoders.results[name]);
+  const fellBackToCpu = predictedEncoder !== null && predictedEncoder !== "none" && wantsGpu && predictedEncoder.startsWith("lib");
+  const hardwareUnavailable = wantsGpu && selectedHardwareEncoder !== "auto" && !selectedHardwareAvailable;
   const encoderNote = predictedEncoder === null
     ? (state.encoders.status === "detecting" ? "正在检测这台电脑能用的编码器…" : null)
     : predictedEncoder === "none"
       ? `这台电脑没有可用的 ${isVvc ? "H.266/VVC" : "AV1"} 编码器，渲染会失败，请换一种视频编码格式。`
-      : `这台电脑将使用：${encoderLabels[predictedEncoder] ?? predictedEncoder}${fellBackToCpu ? "。显卡不支持这种编码格式，会改用 CPU 编码，速度明显变慢。" : "。"}`;
+      : `这台电脑将使用：${encoderLabels[predictedEncoder] ?? predictedEncoder}${hardwareUnavailable ? "。所选硬件编码器不可用，会改用 CPU 编码，速度明显变慢。" : fellBackToCpu ? "。没有可用的硬件编码器，会改用 CPU 编码，速度明显变慢。" : "。"}`;
   const disabledEncoderDevices = {
-    ...(detected && !hasNvenc ? { gpu: "没有检测到可用的 NVIDIA 显卡编码" } : {}),
+    ...(detected && hardwareCodec && !hasHardware ? { gpu: "没有检测到可用的硬件编码器" } : {}),
     ...(isVvc ? { gpu: "H.266/VVC 只有 CPU 编码", custom: "H.266/VVC 不能使用自定义参数" } : {}),
   };
+  const disabledHardwareEncoders: Record<string, string> = {};
+  if (detected && hardwareCodec) {
+    if (!hardwareOptions.some((name) => name.endsWith("_nvenc") && state.encoders.results[name])) disabledHardwareEncoders.nvidia = "没有检测到可用的 NVIDIA 编码器";
+    if (!hardwareOptions.some((name) => name.endsWith("_amf") && state.encoders.results[name])) disabledHardwareEncoders.amd = "没有检测到可用的 AMD 编码器";
+    if (!hardwareOptions.some((name) => name.endsWith("_qsv") && state.encoders.results[name])) disabledHardwareEncoders.intel = "没有检测到可用的 Intel 编码器";
+  }
+  const hardwareNote = wantsGpu && selectedHardwareEncoder !== "auto" && !selectedHardwareAvailable
+    ? "所选硬件编码器不可用；渲染会改用 CPU。可以改选“自动”或 CPU。"
+    : null;
   const presetNote = !detailedEncoder
     ? null
     : isProRes && encoderDevice !== "custom"
@@ -544,7 +567,7 @@ function RenderPage({ state, offline, onSettings, onOpenDocument, onStart, onCan
       : isVvc
         ? "H.266/VVC 只有 CPU 编码，速度极慢；较慢的预设会让渲染时间长到无法接受，建议先用 10 秒片段测试。"
         : encoderDevice === "gpu"
-        ? `没有 NVIDIA 显卡、或显卡不支持所选编码格式时（例如 RTX 30 系及更早的显卡不支持 AV1），会自动改用 CPU 编码，届时使用 CPU 预设 ${shownCpuPreset}。`
+        ? `没有可用的硬件编码器、或显卡不支持所选编码格式时，会自动改用 CPU 编码，届时使用 CPU 预设 ${shownCpuPreset}。NVIDIA 使用 p1–p7；AMD/Intel 会把相同的速度档位换算成 AMF/QSV 预设。`
         : encoderDevice === "cpu" && slowCpuPresets.includes(shownCpuPreset.toLowerCase())
           ? "注意：较慢的 CPU 预设会明显拖慢整个渲染，因为每一帧都要等编码器处理完。1080p60 下 slow 大约只有每秒几帧。"
           : null;
@@ -601,7 +624,11 @@ function RenderPage({ state, offline, onSettings, onOpenDocument, onStart, onCan
           {detailedEncoder ? <>
             <SettingSelect label="编码器" group="ChartRenderEncoderDevice" value={encoderDevice} options={["gpu", "cpu", "custom"]} disabledOptions={disabledEncoderDevices} onChange={setEncoderDevice} disabled={settingsLocked} />
             {isProRes && encoderDevice !== "custom" ? null
-              : encoderDevice === "gpu" ? <SettingSelect label="显卡编码预设" group="ChartRenderHardwarePreset" value={shownHardwarePreset} options={["p1", "p2", "p3", "p4", "p5", "p6", "p7"]} onChange={(value) => onSettings({ ChartRenderHardwarePreset: value })} disabled={settingsLocked} />
+              : encoderDevice === "gpu" ? <>
+                <SettingSelect label="硬件编码器" group="ChartRenderHardwareEncoder" value={state.settings.ChartRenderHardwareEncoder} options={["auto", "nvidia", "intel", "amd"]} disabledOptions={disabledHardwareEncoders} onChange={(value) => onSettings({ ChartRenderHardwareEncoder: value })} disabled={settingsLocked} />
+                <SettingSelect label="显卡编码预设" group="ChartRenderHardwarePreset" value={shownHardwarePreset} options={["p1", "p2", "p3", "p4", "p5", "p6", "p7"]} onChange={(value) => onSettings({ ChartRenderHardwarePreset: value })} disabled={settingsLocked} />
+                {hardwareNote ? <InfoBlock text={hardwareNote} /> : null}
+              </>
               : encoderDevice === "cpu" ? <SettingSelect label="CPU 编码预设" group="ChartRenderCpuPreset" value={shownCpuPreset} options={["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"]} onChange={(value) => onSettings({ ChartRenderCpuPreset: value })} disabled={settingsLocked} />
               : <SettingText label="编码方式" value={state.settings.ChartRenderPreset} onChange={(value) => onSettings({ ChartRenderPreset: value })} disabled={settingsLocked} />}
           </> : <SettingSelect label="编码档位" group="ChartRenderEncoderMode" value={encoderMode === "custom" ? "auto-balanced" : state.settings.ChartRenderEncoderMode} options={["auto-balanced", "fastest", "balanced", "quality", "cpu-compatibility"]} onChange={(value) => onSettings({ ChartRenderEncoderMode: value })} disabled={settingsLocked} />}
@@ -781,6 +808,12 @@ const encoderLabels: Record<string, string> = {
   h264_nvenc: "H.264 显卡编码（NVIDIA）",
   hevc_nvenc: "HEVC 显卡编码（NVIDIA）",
   av1_nvenc: "AV1 显卡编码（NVIDIA，需要 RTX 40 系或更新）",
+  h264_amf: "H.264 显卡编码（AMD AMF）",
+  hevc_amf: "HEVC 显卡编码（AMD AMF）",
+  av1_amf: "AV1 显卡编码（AMD AMF，需要 RDNA 3 或更新）",
+  h264_qsv: "H.264 显卡编码（Intel QSV）",
+  hevc_qsv: "HEVC 显卡编码（Intel QSV）",
+  av1_qsv: "AV1 显卡编码（Intel QSV，需要 Arc 或更新）",
   libx264: "H.264 CPU 编码（x264）",
   libx265: "HEVC CPU 编码（x265）",
   libsvtav1: "AV1 CPU 编码（SVT-AV1，较快）",
@@ -788,11 +821,28 @@ const encoderLabels: Record<string, string> = {
   libvvenc: "H.266/VVC CPU 编码（VVenC，实验性，很慢）",
   prores_aw: "ProRes 422 HQ",
 };
-const encoderOrder = ["h264_nvenc", "hevc_nvenc", "av1_nvenc", "libx264", "libx265", "libsvtav1", "libaom-av1", "libvvenc", "prores_aw"];
-const nvencEncoders = ["h264_nvenc", "hevc_nvenc", "av1_nvenc"];
+const encoderOrder = ["h264_nvenc", "hevc_nvenc", "av1_nvenc", "h264_amf", "hevc_amf", "av1_amf", "h264_qsv", "hevc_qsv", "av1_qsv", "libx264", "libx265", "libsvtav1", "libaom-av1", "libvvenc", "prores_aw"];
+
+function hardwareCandidates(codec: string): string[] {
+  switch (codec) {
+    case "h264": return ["h264_nvenc", "h264_amf", "h264_qsv"];
+    case "hevc": return ["hevc_nvenc", "hevc_amf", "hevc_qsv"];
+    case "av1": return ["av1_nvenc", "av1_amf", "av1_qsv"];
+    default: return [];
+  }
+}
+
+function hardwareSuffix(vendor: string): string {
+  switch (vendor) {
+    case "nvidia": return "_nvenc";
+    case "amd": return "_amf";
+    case "intel": return "_qsv";
+    default: return "";
+  }
+}
 
 // The encoder FfmpegEncoder will pick for these settings on this computer (same order of fallbacks),
-// or null when nothing is detected yet. "none" when no AV1 encoder works at all.
+// or null when nothing is detected yet. "none" when no AV1/VVC encoder works at all.
 function predictEncoder(settings: SettingsState, encoders: EncoderState): string | null {
   const results = encoders.results;
   if (Object.keys(results).length === 0) return null;
@@ -804,13 +854,26 @@ function predictEncoder(settings: SettingsState, encoders: EncoderState): string
     return !customCpu && results.h264_nvenc ? "h264_nvenc" : "libx264";
   }
 
-  switch (settings.ChartRenderVideoCodec.toLowerCase()) {
-    case "hevc": return !forceCpu && results.hevc_nvenc ? "hevc_nvenc" : "libx265";
-    case "av1": return !forceCpu && results.av1_nvenc ? "av1_nvenc" : results.libsvtav1 ? "libsvtav1" : results["libaom-av1"] ? "libaom-av1" : "none";
-    case "vvc": return results.libvvenc ? "libvvenc" : "none";
-    case "prores": return "prores_aw";
-    default: return !forceCpu && results.h264_nvenc ? "h264_nvenc" : "libx264";
+  const codec = settings.ChartRenderVideoCodec.toLowerCase();
+  if (codec === "prores") return "prores_aw";
+  if (codec === "vvc") return results.libvvenc ? "libvvenc" : "none";
+
+  const candidates = hardwareCandidates(codec);
+  if (!forceCpu) {
+    const vendor = settings.ChartRenderHardwareEncoder.toLowerCase();
+    if (vendor !== "auto") {
+      const suffix = hardwareSuffix(vendor);
+      const match = candidates.find((name) => name.endsWith(suffix) && results[name]);
+      if (match) return match;
+    } else {
+      const match = candidates.find((name) => results[name]);
+      if (match) return match;
+    }
   }
+
+  if (codec === "av1") return results.libsvtav1 ? "libsvtav1" : results["libaom-av1"] ? "libaom-av1" : "none";
+  if (codec === "hevc") return "libx265";
+  return "libx264";
 }
 
 function EncoderDetection({ encoders, disabled, onDetect }: { encoders: EncoderState; disabled: boolean; onDetect: () => void }) {

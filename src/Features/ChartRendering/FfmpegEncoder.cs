@@ -30,11 +30,15 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private readonly string videoCodec;
         // Target the configured bitrate instead of constant quality. Best effort per encoder.
         private readonly bool constantBitrate;
+        // auto / nvidia / intel / amd. Auto prefers NVENC, then AMF, then QSV.
+        private readonly string hardwareEncoder;
         // Explicit presets, or "auto" to use the preset the encoder mode picks.
         private readonly string hardwarePreset;
         private readonly string cpuPreset;
         // The codec the video process actually encodes: the custom encoder mode always uses H.264.
         private string effectiveVideoCodec = ChartRenderOptionValues.VideoCodecH264;
+        // The hardware encoder actually chosen for this render; empty when the CPU encoder is used.
+        private string effectiveHardwareEncoder = string.Empty;
         // Guards the process field, which a worker thread swaps (video -> mux -> null) while the
         // main thread may call Abort to cancel.
         private readonly object processLock = new object();
@@ -71,7 +75,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             string videoCodec = ChartRenderOptionValues.VideoCodecH264,
             string hardwarePreset = ChartRenderOptionValues.PresetFollowEncoderMode,
             string cpuPreset = ChartRenderOptionValues.PresetFollowEncoderMode,
-            bool constantBitrate = false)
+            bool constantBitrate = false,
+            string hardwareEncoder = ChartRenderOptionValues.HardwareEncoderAuto)
         {
             this.ffmpegPath = ffmpegPath;
             this.tempVideoPath = tempVideoPath;
@@ -93,20 +98,17 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             this.hardwarePreset = ChartRenderOptionValues.NormalizeHardwarePreset(hardwarePreset);
             this.cpuPreset = ChartRenderOptionValues.NormalizeCpuPreset(cpuPreset);
             this.constantBitrate = constantBitrate;
+            this.hardwareEncoder = ChartRenderOptionValues.NormalizeHardwareEncoder(hardwareEncoder);
         }
 
         public string EncoderName { get; private set; } = "unknown";
 
         public void BeginVideo()
         {
-            // Built first: it decides effectiveVideoCodec, which the pixel format depends on.
+            // Built first: it decides effectiveVideoCodec/effectiveHardwareEncoder, which the
+            // pixel format depends on.
             string encoderArgs = GetVideoEncoderArguments();
-            // ProRes needs 4:2:2 10-bit; VVC (libvvenc) only accepts 10-bit 4:2:0 input.
-            string pixelFormat = effectiveVideoCodec == ChartRenderOptionValues.VideoCodecProRes
-                ? "yuv422p10le"
-                : effectiveVideoCodec == ChartRenderOptionValues.VideoCodecVvc
-                    ? "yuv420p10le"
-                    : "yuv420p";
+            string pixelFormat = GetOutputPixelFormat();
             string args = "-y -f rawvideo -pixel_format " + inputPixelFormat + " "
                 + "-video_size " + width + "x" + height + " "
                 + "-framerate " + fps + " "
@@ -117,6 +119,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
             ChartRenderDiagnostics.Log("FFmpeg video args: mode=" + encoderMode
                 + " codec=" + effectiveVideoCodec
+                + " hardwareEncoder=" + (string.IsNullOrEmpty(effectiveHardwareEncoder) ? "cpu" : effectiveHardwareEncoder)
                 + " hardwarePreset=" + hardwarePreset
                 + " cpuPreset=" + cpuPreset
                 + " input=" + inputPixelFormat
@@ -139,6 +142,28 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         {
             const string evenSizePadding = "pad=ceil(iw/2)*2:ceil(ih/2)*2";
             return flipVertically ? "vflip," + evenSizePadding : evenSizePadding;
+        }
+
+        private string GetOutputPixelFormat()
+        {
+            if (effectiveVideoCodec == ChartRenderOptionValues.VideoCodecProRes)
+            {
+                return "yuv422p10le";
+            }
+
+            if (effectiveVideoCodec == ChartRenderOptionValues.VideoCodecVvc)
+            {
+                return "yuv420p10le";
+            }
+
+            // QSV and AMF want NV12 input; NVENC and the CPU encoders accept yuv420p.
+            if (effectiveHardwareEncoder.EndsWith("_amf", System.StringComparison.Ordinal)
+                || effectiveHardwareEncoder.EndsWith("_qsv", System.StringComparison.Ordinal))
+            {
+                return "nv12";
+            }
+
+            return "yuv420p";
         }
 
         public void WriteFrame(byte[] frame, int length, int repeatCount, Action<byte[]>? release, Func<bool>? isCancelRequested = null)
@@ -468,6 +493,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         private string GetVideoEncoderArguments()
         {
+            effectiveHardwareEncoder = string.Empty;
             if (encoderMode == ChartRenderOptionValues.EncoderCustom)
             {
                 // The custom mode predates codec selection and always encodes H.264.
@@ -491,14 +517,112 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
         }
 
+        // Auto order: NVENC, then AMD AMF, then Intel QSV. The explicit worker setting is honored
+        // first; if that vendor is unavailable the CPU encoder is used.
+        private string? SelectHardwareEncoder(string codec)
+        {
+            string[] candidates;
+            switch (codec)
+            {
+                case ChartRenderOptionValues.VideoCodecH264:
+                    candidates = new[] { "h264_nvenc", "h264_amf", "h264_qsv" };
+                    break;
+                case ChartRenderOptionValues.VideoCodecHevc:
+                    candidates = new[] { "hevc_nvenc", "hevc_amf", "hevc_qsv" };
+                    break;
+                case ChartRenderOptionValues.VideoCodecAv1:
+                    candidates = new[] { "av1_nvenc", "av1_amf", "av1_qsv" };
+                    break;
+                default:
+                    return null;
+            }
+
+            if (hardwareEncoder != ChartRenderOptionValues.HardwareEncoderAuto)
+            {
+                string suffix = hardwareEncoder == ChartRenderOptionValues.HardwareEncoderNvidia
+                    ? "_nvenc"
+                    : hardwareEncoder == ChartRenderOptionValues.HardwareEncoderIntel
+                        ? "_qsv"
+                        : "_amf";
+
+                foreach (string candidate in candidates)
+                {
+                    if (candidate.EndsWith(suffix, StringComparison.Ordinal) && IsEncoderAvailable(candidate))
+                    {
+                        return candidate;
+                    }
+                }
+
+                Main.Log("Requested " + hardwareEncoder + " hardware encoder is unavailable for " + codec + "; using the CPU encoder.");
+                return null;
+            }
+
+            foreach (string candidate in candidates)
+            {
+                if (IsEncoderAvailable(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
+        }
+
+        private string GetHardwareEncoderArguments(string encoder, string codec)
+        {
+            if (encoder.EndsWith("_nvenc", StringComparison.Ordinal))
+            {
+                return GetNvencArguments(encoder, codec);
+            }
+
+            if (encoder.EndsWith("_amf", StringComparison.Ordinal))
+            {
+                return GetAmfArguments(encoder, codec);
+            }
+
+            return GetQsvArguments(encoder, codec);
+        }
+
+        private string GetNvencArguments(string encoder, string codec)
+        {
+            string preset = GetNvencPreset();
+            effectiveHardwareEncoder = encoder;
+            EncoderName = encoder + " " + preset;
+            Main.Log("Chart renderer using " + encoder + " preset " + preset + ".");
+            bool av1 = codec == ChartRenderOptionValues.VideoCodecAv1;
+            return "-c:v " + encoder + " -preset " + preset + " -tune " + GetNvencTune()
+                + " " + GetNvencBitrateArguments(av1) + " -g " + GetGopSize();
+        }
+
+        private string GetAmfArguments(string encoder, string codec)
+        {
+            string preset = GetAmfPreset(codec);
+            effectiveHardwareEncoder = encoder;
+            EncoderName = encoder + " " + preset;
+            Main.Log("Chart renderer using " + encoder + " preset " + preset + ".");
+            return "-c:v " + encoder + " -usage transcoding -quality " + preset
+                + " " + GetAmfBitrateArguments() + " -g " + GetGopSize();
+        }
+
+        private string GetQsvArguments(string encoder, string codec)
+        {
+            string preset = GetQsvPreset();
+            effectiveHardwareEncoder = encoder;
+            EncoderName = encoder + " " + preset;
+            Main.Log("Chart renderer using " + encoder + " preset " + preset + ".");
+            return "-c:v " + encoder + " -preset " + preset
+                + " " + GetQsvBitrateArguments(codec) + " -g " + GetGopSize();
+        }
+
         private string GetH264EncoderArguments()
         {
-            if (!ForcesCpuEncoder() && IsEncoderAvailable("h264_nvenc"))
+            if (!ForcesCpuEncoder())
             {
-                string nvencPreset = GetNvencPreset();
-                EncoderName = "h264_nvenc " + nvencPreset;
-                Main.Log("Chart renderer using h264_nvenc preset " + nvencPreset + ".");
-                return "-c:v h264_nvenc -preset " + nvencPreset + " -tune " + GetNvencTune() + " " + GetNvencBitrateArguments() + " -g " + GetGopSize();
+                string? hardware = SelectHardwareEncoder("h264");
+                if (hardware != null)
+                {
+                    return GetHardwareEncoderArguments(hardware, "h264");
+                }
             }
 
             string x264Preset = GetX264Preset();
@@ -509,12 +633,13 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         private string GetHevcEncoderArguments()
         {
-            if (!ForcesCpuEncoder() && IsEncoderAvailable("hevc_nvenc"))
+            if (!ForcesCpuEncoder())
             {
-                string nvencPreset = GetNvencPreset();
-                EncoderName = "hevc_nvenc " + nvencPreset;
-                Main.Log("Chart renderer using hevc_nvenc preset " + nvencPreset + ".");
-                return "-c:v hevc_nvenc -preset " + nvencPreset + " -tune " + GetNvencTune() + " " + GetNvencBitrateArguments() + " -g " + GetGopSize();
+                string? hardware = SelectHardwareEncoder("hevc");
+                if (hardware != null)
+                {
+                    return GetHardwareEncoderArguments(hardware, "hevc");
+                }
             }
 
             // libx265 accepts the same preset names as libx264.
@@ -528,12 +653,13 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         // is much faster than libaom-av1; libaom remains the fallback for custom FFmpeg builds without it.
         private string GetAv1EncoderArguments()
         {
-            if (!ForcesCpuEncoder() && IsEncoderAvailable("av1_nvenc"))
+            if (!ForcesCpuEncoder())
             {
-                string nvencPreset = GetNvencPreset();
-                EncoderName = "av1_nvenc " + nvencPreset;
-                Main.Log("Chart renderer using av1_nvenc preset " + nvencPreset + ".");
-                return "-c:v av1_nvenc -preset " + nvencPreset + " -tune " + GetNvencTune() + " " + GetNvencBitrateArguments(av1: true) + " -g " + GetGopSize();
+                string? hardware = SelectHardwareEncoder("av1");
+                if (hardware != null)
+                {
+                    return GetHardwareEncoderArguments(hardware, "av1");
+                }
             }
 
             if (IsEncoderAvailable("libsvtav1"))
@@ -653,6 +779,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         {
             if (!ForcesCustomCpuEncoder() && IsEncoderAvailable("h264_nvenc"))
             {
+                effectiveHardwareEncoder = "h264_nvenc";
                 EncoderName = "h264_nvenc p1";
                 Main.Log("Chart renderer using custom compatibility h264_nvenc.");
                 return "-c:v h264_nvenc -preset p1 -tune ll " + GetNvencBitrateArguments() + " -g " + GetGopSize();
@@ -685,24 +812,82 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             return lowered == "cpu" || lowered == "x264" || lowered.StartsWith("x264:", StringComparison.Ordinal);
         }
 
-        private string GetNvencPreset()
+        // Position on the shared hardware speed scale: 1 (fastest) to 7 (best quality). The UI's
+        // p1-p7 selection is NVENC's native name; AMF and QSV map the same rank to their presets.
+        private int GetHardwarePresetRank()
         {
             if (hardwarePreset != ChartRenderOptionValues.PresetFollowEncoderMode)
             {
-                return hardwarePreset;
+                int index = Array.IndexOf(ChartRenderOptionValues.HardwarePresets, hardwarePreset);
+                if (index > 0)
+                {
+                    return index;
+                }
             }
 
             switch (encoderMode)
             {
                 case ChartRenderOptionValues.EncoderFastest:
-                    return "p1";
+                    return 1;
                 case ChartRenderOptionValues.EncoderQuality:
-                    return "p6";
+                    return 6;
                 case ChartRenderOptionValues.EncoderBalanced:
                 case ChartRenderOptionValues.EncoderAutoBalanced:
                 default:
-                    return "p4";
+                    return 4;
             }
+        }
+
+        private string GetNvencPreset()
+        {
+            return "p" + Math.Max(1, Math.Min(7, GetHardwarePresetRank()));
+        }
+
+        private string GetQsvPreset()
+        {
+            switch (GetHardwarePresetRank())
+            {
+                case 1: return "veryfast";
+                case 2: return "faster";
+                case 3: return "fast";
+                case 4: return "medium";
+                case 5: return "slow";
+                case 6: return "slower";
+                default: return "veryslow";
+            }
+        }
+
+        private string GetAmfPreset(string codec)
+        {
+            int rank = GetHardwarePresetRank();
+            if (codec == ChartRenderOptionValues.VideoCodecAv1)
+            {
+                // av1_amf uses the same names but a different numeric scale:
+                // high_quality = 0, quality = 30, balanced = 70, speed = 100.
+                if (rank <= 2)
+                {
+                    return "speed";
+                }
+
+                if (rank == 3)
+                {
+                    return "balanced";
+                }
+
+                return rank <= 5 ? "quality" : "high_quality";
+            }
+
+            if (rank <= 2)
+            {
+                return "speed";
+            }
+
+            if (rank <= 5)
+            {
+                return "balanced";
+            }
+
+            return rank == 6 ? "quality" : "high_quality";
         }
 
         // x264/x265 preset name; also the scale the AV1 CPU encoders are mapped from.
@@ -796,6 +981,52 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private int GetTargetBitrateMbps()
         {
             return ChartRenderBitratePresets.ResolveTargetBitrateMbps(configuredBitrateMbps, width, height, fps);
+        }
+
+        private string GetAmfBitrateArguments()
+        {
+            if (UsesConstantBitrate())
+            {
+                int target = GetTargetBitrateMbps();
+                return "-rc cbr -b:v " + target + "M"
+                    + " -maxrate " + target + "M"
+                    + " -bufsize " + ChartRenderBitratePresets.GetBufferSizeMbps(target) + "M";
+            }
+
+            if (UsesConstantQuality())
+            {
+                // QVBR is AMD's quality-targeted mode; its level uses the same 0-51 range as CRF.
+                return "-rc qvbr -qvbr_quality_level " + ClampCrf();
+            }
+
+            int vbrTarget = GetTargetBitrateMbps();
+            return "-rc vbr_peak -b:v " + vbrTarget + "M"
+                + " -maxrate " + ChartRenderBitratePresets.GetMaxRateMbps(vbrTarget) + "M"
+                + " -bufsize " + ChartRenderBitratePresets.GetBufferSizeMbps(vbrTarget) + "M";
+        }
+
+        private string GetQsvBitrateArguments(string codec)
+        {
+            if (UsesConstantBitrate())
+            {
+                int target = GetTargetBitrateMbps();
+                return "-b:v " + target + "M"
+                    + " -maxrate " + target + "M"
+                    + " -bufsize " + ChartRenderBitratePresets.GetBufferSizeMbps(target) + "M"
+                    + " -low_delay_brc 1";
+            }
+
+            if (UsesConstantQuality())
+            {
+                // Intel's ICQ mode. The look-ahead option is only exposed by h264_qsv.
+                string args = "-global_quality " + ClampCrf();
+                return codec == ChartRenderOptionValues.VideoCodecH264 ? args + " -look_ahead 1" : args;
+            }
+
+            int vbrTarget = GetTargetBitrateMbps();
+            return "-b:v " + vbrTarget + "M"
+                + " -maxrate " + ChartRenderBitratePresets.GetMaxRateMbps(vbrTarget) + "M"
+                + " -bufsize " + ChartRenderBitratePresets.GetBufferSizeMbps(vbrTarget) + "M";
         }
 
         // With the bitrate setting at Auto, CRF alone controls quality and no bitrate cap applies, so a

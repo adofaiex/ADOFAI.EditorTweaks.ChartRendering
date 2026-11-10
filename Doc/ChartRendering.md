@@ -447,7 +447,7 @@ Patch `scrSfx.PlaySfx(... InterfaceParent ...)` 的原因：
 temp_video.mp4 | temp_video.mov
 ```
 
-像素格式按编码器决定：H.264/HEVC/AV1 用 `yuv420p`，H.266/VVC 用 `yuv420p10le`（libvvenc 只接受 10-bit 输入），ProRes 用 `yuv422p10le`。ProRes 的临时文件是 `.mov`，其他编码器是 `.mp4`。
+像素格式按编码器决定：H.264/HEVC/AV1 的 CPU 和 NVENC 使用 `yuv420p`，AMD AMF / Intel QSV 使用 `nv12`，H.266/VVC 使用 `yuv420p10le`（libvvenc 只接受 10-bit 输入），ProRes 使用 `yuv422p10le`。ProRes 的临时文件是 `.mov`，其他编码器是 `.mp4`。
 
 编码档位：
 
@@ -472,6 +472,16 @@ temp_video.mp4 | temp_video.mov
 | H.266 / VVC | `libvvenc` | 实验性，不推荐。只有 CPU 编码，1080p60 约每秒数帧；输出 10-bit，MP4/MKV/MOV 都能封装，但大多数播放器、剪辑软件和网站不支持。 |
 | ProRes 422 HQ | `prores_aw` | 只输出 MOV，体积很大，适合剪辑。 |
 
+硬件编码器：
+
+| 厂商 | H.264 | HEVC | AV1 |
+| --- | --- | --- | --- |
+| NVIDIA | `h264_nvenc` | `hevc_nvenc` | `av1_nvenc`（RTX 40 系或更新） |
+| AMD | `h264_amf` | `hevc_amf` | `av1_amf`（RDNA 3 或更新） |
+| Intel | `h264_qsv` | `hevc_qsv` | `av1_qsv`（Arc 或更新） |
+
+`ChartRenderHardwareEncoder = auto` 时依次尝试 NVENC → AMD AMF → Intel QSV，驱动或硬件不支持时回退 CPU。也可以在设置页或 API 指定 NVIDIA / Intel / AMD；指定的编码器不可用时同样回退 CPU。AMF/QSV 使用 `nv12` 像素格式；`p1`–`p7` 是共享速度档位，AMF/QSV 会换算成各自的预设。
+
 ## 码率控制
 
 `ChartRenderBitrateMbps = 0` 且关闭恒定比特率时，画质只由 CRF 控制。填写非 0 码率时使用 VBR/ABR：
@@ -487,6 +497,8 @@ NVENC 的 VBR 会额外带 `-rc vbr -cq <quality>`。
 | 编码器 | CBR 实现 |
 | --- | --- |
 | NVENC H.264 / HEVC / AV1 | `-rc cbr -b:v <target>M -maxrate <target>M -bufsize <buffer>M`，真正 CBR。 |
+| AMD AMF H.264 / HEVC / AV1 | `-rc cbr -b:v <target>M -maxrate <target>M -bufsize <buffer>M`。 |
+| Intel QSV H.264 / HEVC / AV1 | `-b:v <target>M -maxrate <target>M -bufsize <buffer>M -low_delay_brc 1`。 |
 | libx264 / libx265 | `-b:v <target>M -minrate <target>M -maxrate <target>M -bufsize <buffer>M`；x265 额外加 `strict-cbr=1`。MP4 不支持 HRD filler，属于受 VBV 限制的近似 CBR。 |
 | libsvtav1 | `-svtav1-params rc=2:pred-struct=1` 加目标码率；CBR 需要低延迟模式，压缩效率会下降。 |
 | libaom-av1 | `-b:v <target>M -minrate <target>M -maxrate <target>M -bufsize <buffer>M`。 |

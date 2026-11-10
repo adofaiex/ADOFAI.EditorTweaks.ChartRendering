@@ -64,6 +64,7 @@ export function createMockState(): WebUiState {
     ChartRenderUseSelectedRange: false,
     ChartRenderCustomMuxArgs: "",
     ChartRenderVideoCodec: "h264",
+    ChartRenderHardwareEncoder: "auto",
     ChartRenderHardwarePreset: "auto",
     ChartRenderCpuPreset: "auto",
     ChartRenderDetailedEncoderSettings: false,
@@ -88,7 +89,7 @@ export function createMockState(): WebUiState {
       status: "ready",
       detectedAt: "2026-11-10 20:00",
       gpu: "NVIDIA GeForce RTX 3070",
-      results: { h264_nvenc: true, hevc_nvenc: true, av1_nvenc: false, libx264: true, libx265: true, libsvtav1: true, "libaom-av1": true, libvvenc: true, prores_aw: true },
+      results: { h264_nvenc: true, hevc_nvenc: true, av1_nvenc: false, h264_amf: false, hevc_amf: false, av1_amf: false, h264_qsv: false, hevc_qsv: false, av1_qsv: false, libx264: true, libx265: true, libsvtav1: true, "libaom-av1": true, libvvenc: true, prores_aw: true },
     },
     render: {
       active: false,

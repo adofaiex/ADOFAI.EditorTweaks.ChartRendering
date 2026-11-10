@@ -84,6 +84,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 ["ChartRenderConstantBitrate"] = settings.ChartRenderConstantBitrate,
                 ["ChartRenderPreset"] = settings.ChartRenderPreset ?? string.Empty,
                 ["ChartRenderEncoderMode"] = settings.ChartRenderEncoderMode ?? string.Empty,
+                ["ChartRenderHardwareEncoder"] = settings.ChartRenderHardwareEncoder ?? string.Empty,
                 ["ChartRenderHardwarePreset"] = settings.ChartRenderHardwarePreset ?? string.Empty,
                 ["ChartRenderCpuPreset"] = settings.ChartRenderCpuPreset ?? string.Empty,
                 ["ChartRenderDetailedEncoderSettings"] = settings.ChartRenderDetailedEncoderSettings,

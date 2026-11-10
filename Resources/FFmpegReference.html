@@ -140,6 +140,8 @@ a { color: var(--accent); }
 <tr><td><code>-c:v libx264</code></td><td><span class="badge badge-orange" data-i18n="hwCpu">CPU</span></td><td data-i18n="qExcellent">优秀</td><td data-i18n="cBest">最佳</td><td data-i18n="t_x264">软件 H.264。最佳质量 / 码率比。Mod 回退方案。</td></tr>
 <tr><td><code>-c:v libx265</code></td><td><span class="badge badge-orange" data-i18n="hwCpu">CPU</span></td><td data-i18n="qExcellent">优秀</td><td data-i18n="cGood">良好</td><td data-i18n="t_x265">H.265 / HEVC。同质量比 H.264 小约 50%。编码较慢，播放器支持较少。</td></tr>
 <tr><td><code>-c:v hevc_nvenc</code></td><td><span class="badge badge-blue" data-i18n="hwNvidia">NVIDIA GPU</span></td><td data-i18n="qGood">良好</td><td data-i18n="cGood">良好</td><td data-i18n="t_hevc_nvenc">硬件 HEVC 编码器。快，但文件比 libx265 大。</td></tr>
+<tr><td><code>-c:v h264_amf</code> / <code>hevc_amf</code> / <code>av1_amf</code></td><td><span class="badge badge-blue">AMD GPU</span></td><td data-i18n="qGood">良好</td><td data-i18n="cGood">良好</td><td data-i18n="t_amf">AMD AMF 硬件编码。AV1 需要 RDNA 3 或更新；不可用时 Mod 会回退 CPU。</td></tr>
+<tr><td><code>-c:v h264_qsv</code> / <code>hevc_qsv</code> / <code>av1_qsv</code></td><td><span class="badge badge-blue">Intel GPU</span></td><td data-i18n="qGood">良好</td><td data-i18n="cGood">良好</td><td data-i18n="t_qsv">Intel Quick Sync 硬件编码。AV1 需要 Arc 或更新；不可用时 Mod 会回退 CPU。</td></tr>
 <tr><td><code>-c:v libvpx-vp9</code></td><td><span class="badge badge-orange" data-i18n="hwCpu">CPU</span></td><td data-i18n="qExcellent">优秀</td><td data-i18n="cModerate">一般</td><td data-i18n="t_vp9">WebM 用的 VP9。免版税，编码很慢。</td></tr>
 <tr><td><code>-c:v libaom-av1</code></td><td><span class="badge badge-red" data-i18n="hwCpu">CPU</span></td><td data-i18n="qBest">最好</td><td data-i18n="cLow">较低</td><td data-i18n="t_av1">最新的 AV1 编码。极慢，压缩率最高。播放器支持有限。</td></tr>
 <tr><td><code>-c:v libsvtav1</code></td><td><span class="badge badge-orange" data-i18n="hwCpu">CPU</span></td><td data-i18n="qExcellent">优秀</td><td data-i18n="cLow">较低</td><td data-i18n="t_svtav1">SVT-AV1。full build 自带，比 libaom 快很多。没有 AV1 硬件编码时使用。</td></tr>
@@ -454,6 +456,8 @@ const T = {
     t_x264:'软件 H.264。最佳质量 / 码率比。Mod 回退方案。',
     t_x265:'H.265 / HEVC。同质量比 H.264 小约 50%。编码较慢，播放器支持较少。',
     t_hevc_nvenc:'硬件 HEVC 编码器。快，但文件比 libx265 大。',
+    t_amf:'AMD AMF 硬件编码。AV1 需要 RDNA 3 或更新；不可用时 Mod 会回退 CPU。',
+    t_qsv:'Intel Quick Sync 硬件编码。AV1 需要 Arc 或更新；不可用时 Mod 会回退 CPU。',
     t_vp9:'WebM 用的 VP9。免版税，编码很慢。',
     t_av1:'最新的 AV1 编码。极慢，压缩率最高。播放器支持有限。',
     t_svtav1:'SVT-AV1。full build 自带，比 libaom 快很多。没有 AV1 硬件编码时使用。',
@@ -625,6 +629,8 @@ const T = {
     t_x264:'Software H.264. Best quality-per-bitrate ratio. Mod fallback.',
     t_x265:'H.265/HEVC. ~50% smaller at same quality vs H.264. Slower. Less player support.',
     t_hevc_nvenc:'Hardware HEVC encoder. Fast but larger files than libx265.',
+    t_amf:'AMD AMF hardware encoding. AV1 needs RDNA 3 or newer; the Mod falls back to CPU when unavailable.',
+    t_qsv:'Intel Quick Sync hardware encoding. AV1 needs Arc or newer; the Mod falls back to CPU when unavailable.',
     t_vp9:'VP9 for WebM. Royalty-free. Very slow encoding.',
     t_av1:'AV1, newest codec. Extremely slow. Best compression. Limited player support.',
     t_svtav1:'SVT-AV1. Bundled with the full build. Much faster than libaom; used when no AV1 hardware encoder is available.',
