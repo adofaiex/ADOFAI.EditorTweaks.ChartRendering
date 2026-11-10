@@ -149,8 +149,14 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 VideoCodec = ChartRenderOptionValues.ParseVideoCodec(source.ChartRenderVideoCodec),
                 AudioFormat = ParseAudioFormat(source.ChartRenderAudioFormat),
                 EncoderMode = ParseEncoderMode(source.ChartRenderEncoderMode),
-                HardwarePreset = ChartRenderOptionValues.ParseHardwarePreset(source.ChartRenderHardwarePreset),
-                CpuPreset = ChartRenderOptionValues.ParseCpuPreset(source.ChartRenderCpuPreset),
+                // The presets belong to the detailed encoder settings; in the simple view the encoder
+                // mode alone decides, so presets left over from the detailed view do not apply.
+                HardwarePreset = source.ChartRenderDetailedEncoderSettings
+                    ? ChartRenderOptionValues.ParseHardwarePreset(source.ChartRenderHardwarePreset)
+                    : ChartRenderHardwarePreset.FollowEncoderMode,
+                CpuPreset = source.ChartRenderDetailedEncoderSettings
+                    ? ChartRenderOptionValues.ParseCpuPreset(source.ChartRenderCpuPreset)
+                    : ChartRenderCpuPreset.FollowEncoderMode,
                 ReadbackFormat = ChartRenderOptionValues.NormalizeCaptureFormat(source.ChartRenderCaptureFormat) == ChartRenderOptionValues.CaptureBgra
                     ? ChartRenderReadbackFormat.Bgra
                     : ChartRenderReadbackFormat.Rgba,

@@ -82,6 +82,11 @@ const settingLabels: Record<string, Record<string, string>> = {
     av1: "AV1（体积最小，编码较慢）",
     prores: "ProRes 422 HQ（剪辑用，体积很大）",
   },
+  ChartRenderEncoderDevice: {
+    gpu: "显卡（NVIDIA NVENC）",
+    cpu: "CPU",
+    custom: "自定义参数",
+  },
   ChartRenderHardwarePreset: {
     auto: "跟随编码档位",
     p1: "p1（最快）",
@@ -107,6 +112,16 @@ const settingLabels: Record<string, Record<string, string>> = {
 };
 
 const labelFor = (group: string, value: string) => settingLabels[group]?.[value] ?? value;
+
+// The NVENC / CPU presets each simple encoder mode uses (FfmpegEncoder.GetNvencPreset / GetX264Preset).
+const encoderPresetDefaults: Record<string, { hardware: string; cpu: string }> = {
+  "auto-balanced": { hardware: "p4", cpu: "veryfast" },
+  fastest: { hardware: "p1", cpu: "ultrafast" },
+  balanced: { hardware: "p4", cpu: "veryfast" },
+  quality: { hardware: "p6", cpu: "fast" },
+  "cpu-compatibility": { hardware: "p4", cpu: "veryfast" },
+  custom: { hardware: "p4", cpu: "veryfast" },
+};
 
 const proResOnlyMov = "ProRes 只能保存为 MOV";
 const movNoFlac = "MOV 不支持 FLAC 音频";
@@ -139,6 +154,11 @@ function App() {
   const [connected, setConnected] = React.useState(false);
   const [reconnecting, setReconnecting] = React.useState(false);
   const [connectionReload, setConnectionReload] = React.useState(0);
+  // Set once the mod has answered, and whether a render was running in the last state it sent: a
+  // drop after that means the game was closed or crashed, possibly in the middle of a render.
+  const [everConnected, setEverConnected] = React.useState(false);
+  const [lostDuringRender, setLostDuringRender] = React.useState(false);
+  const lastRenderActive = React.useRef(false);
   const localPreview = isLocalPreview();
   const [demoMode, setDemoMode] = React.useState(localPreview);
   const renderActionInFlight = React.useRef(false);
@@ -165,8 +185,11 @@ function App() {
       const source = createEventSource((nextState) => {
         if (disposed) return;
         setState(nextState);
+        lastRenderActive.current = nextState.render.active;
         setLoading(false);
         setConnected(true);
+        setEverConnected(true);
+        setLostDuringRender(false);
         setReconnecting(false);
         setDemoMode(false);
       });
@@ -182,6 +205,7 @@ function App() {
         if (disposed) return;
         setLoading(false);
         setConnected(false);
+        if (lastRenderActive.current) setLostDuringRender(true);
         source.close();
         if (events === source) events = undefined;
         scheduleReconnect();
@@ -292,7 +316,13 @@ function App() {
         const response = await postJson<{ state: WebUiState }>(`/api/render/${action}`, {
           taskId: state.render.taskId,
         });
-        if (response.state) setState(response.state);
+        if (response.state) {
+          // The mod answers a cancel before the game publishes the canceling state, so the button
+          // shows the request was taken right away.
+          setState(action === "cancel" && response.state.render?.active
+            ? { ...response.state, render: { ...response.state.render, cancelRequested: true } }
+            : response.state);
+        }
       }
       setPage("render");
     } catch (error) {
@@ -355,6 +385,16 @@ function App() {
         </div>
       </header>
 
+      {!localPreview && everConnected && !connected ? <div className="connection-lost-banner" role="alert">
+        <IconCloseCircle />
+        <div>
+          <strong>{lostDuringRender ? "与游戏的连接已断开，渲染被中断" : "与游戏的连接已断开"}</strong>
+          <span>{lostDuringRender
+            ? "游戏可能已经关闭或崩溃。这次渲染没有完成，导出文件夹里不会有可用的视频（可能残留 .part 文件，可以直接删除）。"
+            : "游戏可能已经关闭或崩溃。页面会自动尝试重连。"}
+            {" "}如果游戏已经重新启动，这个页面无法再连接，请在游戏里按设置页快捷键重新打开。</span>
+        </div>
+      </div> : null}
       <div className="workspace">
         <aside className="sidebar">
           <div className="sidebar-title">功能导航</div>
@@ -378,7 +418,7 @@ function App() {
         <main className="main-content">
           {loading ? <div className="loading-state"><Spin size={32} /><span>正在连接 Mod 服务…</span></div> : null}
           {!loading && visibleRender ? (
-            <RenderPage state={state} onSettings={updateSettings} onOpenDocument={openDocument} onStart={() => renderAction("start")} onCancel={() => renderAction("cancel")} />
+            <RenderPage state={state} offline={!demoMode && !connected} onSettings={updateSettings} onOpenDocument={openDocument} onStart={() => renderAction("start")} onCancel={() => renderAction("cancel")} />
           ) : null}
           {!loading && !visibleRender && page === "overview" ? (
             <Overview state={state} onNavigate={setPage} onSettings={updateSettings} onAction={runAction} disabled={state.render.active} />
@@ -425,7 +465,7 @@ function Overview({ state, onNavigate, onSettings, onAction, disabled }: { state
   );
 }
 
-function RenderPage({ state, onSettings, onOpenDocument, onStart, onCancel }: { state: WebUiState; onSettings: (changes: Partial<SettingsState>) => void; onOpenDocument: (path: string) => void; onStart: () => void; onCancel: () => void }) {
+function RenderPage({ state, offline, onSettings, onOpenDocument, onStart, onCancel }: { state: WebUiState; offline: boolean; onSettings: (changes: Partial<SettingsState>) => void; onOpenDocument: (path: string) => void; onStart: () => void; onCancel: () => void }) {
   const progress = state.render.progress;
   const percent = Math.round(Math.max(0, Math.min(1, progress.value)) * 1000) / 10;
   const settingsLocked = state.render.active;
@@ -436,7 +476,7 @@ function RenderPage({ state, onSettings, onOpenDocument, onStart, onCancel }: { 
   const isCustomEncoder = state.settings.ChartRenderEncoderMode.toLowerCase() === "custom";
   const videoCodec = state.settings.ChartRenderVideoCodec.toLowerCase();
   const codecNote = isCustomEncoder && videoCodec !== "h264"
-    ? "当前编码档位为“自定义”，该档位固定使用 H.264，视频编码格式的选择不会生效。"
+    ? "编码器为“自定义参数”时固定使用 H.264，视频编码格式的选择不会生效。"
     : videoCodec === "prores"
       ? "ProRes 文件非常大，适合导入剪辑软件；只能保存为 MOV，音频不能用 FLAC。"
       : videoCodec === "av1"
@@ -450,14 +490,29 @@ function RenderPage({ state, onSettings, onOpenDocument, onStart, onCancel }: { 
   const shownAudioFormat = outputsMov && state.settings.ChartRenderAudioFormat.toLowerCase() === "flac" ? "alac" : state.settings.ChartRenderAudioFormat;
   const disabledVideoFormats = isProRes ? { mp4: proResOnlyMov, mkv: proResOnlyMov } : undefined;
   const disabledAudioFormats = outputsMov ? { flac: movNoFlac } : undefined;
-  // The custom encoder mode has its own preset field, and ProRes has no speed presets.
-  const showPresets = !isCustomEncoder && !isProRes;
+  // Encoder settings come in two views. Simple: the encoder mode alone (presets are ignored by the
+  // mod in this view). Detailed: pick the encoder, then only that encoder's preset is shown.
+  const detailedEncoder = state.settings.ChartRenderDetailedEncoderSettings;
+  const encoderMode = state.settings.ChartRenderEncoderMode.toLowerCase();
+  const encoderDevice = encoderMode === "custom" ? "custom" : encoderMode === "cpu-compatibility" ? "cpu" : "gpu";
+  const modeDefaults = encoderPresetDefaults[encoderMode] ?? encoderPresetDefaults["auto-balanced"];
+  const shownHardwarePreset = state.settings.ChartRenderHardwarePreset.toLowerCase() === "auto" ? modeDefaults.hardware : state.settings.ChartRenderHardwarePreset;
+  const shownCpuPreset = state.settings.ChartRenderCpuPreset.toLowerCase() === "auto" ? modeDefaults.cpu : state.settings.ChartRenderCpuPreset;
+  // Entering the detailed view fills in the presets the current mode was using, so nothing changes.
+  const setDetailedEncoder = (detailed: boolean) => onSettings(detailed
+    ? { ChartRenderDetailedEncoderSettings: true, ChartRenderHardwarePreset: shownHardwarePreset, ChartRenderCpuPreset: shownCpuPreset }
+    : { ChartRenderDetailedEncoderSettings: false, ...(encoderMode === "custom" ? { ChartRenderEncoderMode: "auto-balanced" } : {}) });
+  const setEncoderDevice = (device: string) => onSettings({ ChartRenderEncoderMode: device === "cpu" ? "cpu-compatibility" : device === "custom" ? "custom" : "auto-balanced" });
   const slowCpuPresets = ["medium", "slow", "slower", "veryslow"];
-  const presetNote = !showPresets
-    ? (isProRes && !isCustomEncoder ? "ProRes 没有速度预设，显卡和 CPU 编码预设不适用。" : null)
-    : slowCpuPresets.includes(state.settings.ChartRenderCpuPreset.toLowerCase())
-      ? "注意：较慢的 CPU 预设会明显拖慢整个渲染，因为每一帧都要等编码器处理完。显卡编码预设只在使用 NVIDIA 显卡编码时生效，CPU 编码预设只在用 CPU 编码时生效（没有 NVIDIA 显卡、选了“CPU 兼容”档位，或显卡不支持 AV1 时）。"
-      : "显卡编码预设只在使用 NVIDIA 显卡编码时生效，CPU 编码预设只在用 CPU 编码时生效（没有 NVIDIA 显卡、选了“CPU 兼容”档位，或显卡不支持 AV1 时）。预设越靠后，同样画质下文件越小，但编码越慢。";
+  const presetNote = !detailedEncoder
+    ? null
+    : isProRes && encoderDevice !== "custom"
+      ? "ProRes 没有速度预设，编码器和预设的选择不适用。"
+      : encoderDevice === "gpu"
+        ? `没有 NVIDIA 显卡、或显卡不支持所选编码格式时（例如 RTX 30 系及更早的显卡不支持 AV1），会自动改用 CPU 编码，届时使用 CPU 预设 ${shownCpuPreset}。`
+        : encoderDevice === "cpu" && slowCpuPresets.includes(shownCpuPreset.toLowerCase())
+          ? "注意：较慢的 CPU 预设会明显拖慢整个渲染，因为每一帧都要等编码器处理完。1080p60 下 slow 大约只有每秒几帧。"
+          : null;
   return <>
     <PageHeading title="谱面渲染" description="实时查看渲染阶段、编码状态和队列压力。" />
     {terminalResult ? <div className={`render-result-banner ${terminalResult.kind}`}><span className="render-result-icon">{terminalResult.kind === "success" ? <IconCheckCircle /> : terminalResult.kind === "failed" ? <IconCloseCircle /> : <IconInfoCircle />}</span><div><strong>{terminalResult.title}</strong><span>{terminalResult.detail}</span>{state.render.outputPath && terminalResult.kind === "success" ? <code title={state.render.outputPath}>{state.render.outputPath}</code> : null}</div></div> : null}
@@ -479,7 +534,7 @@ function RenderPage({ state, onSettings, onOpenDocument, onStart, onCancel }: { 
         <DetailLine label="队列预算" value={progress.queueBudget || "—"} />
         <DetailLine label="输出路径" value={state.render.outputPath || "—"} />
       </div>
-      {state.render.active ? <Button className="danger-button" disabled={state.render.cancelRequested} icon={<IconCloseCircle />} onClick={onCancel}>{state.render.cancelRequested ? "正在取消…" : "取消渲染"}</Button> : <div className="render-action-row"><div className="render-idle"><IconCheckCircle /> {state.render.message || "当前没有正在运行的渲染任务"}</div><Button className="primary-button" icon={<IconPlayArrow />} onClick={onStart}>开始渲染</Button></div>}
+      {state.render.active ? <Button className="danger-button" disabled={state.render.cancelRequested || offline} icon={<IconCloseCircle />} onClick={onCancel}>{offline ? "连接已断开" : state.render.cancelRequested ? "正在取消…" : "取消渲染"}</Button> : <div className="render-action-row"><div className="render-idle"><IconCheckCircle /> {state.render.message || "当前没有正在运行的渲染任务"}</div><Button className="primary-button" disabled={offline} icon={<IconPlayArrow />} onClick={onStart}>开始渲染</Button></div>}
     </section>
     <section className={`render-settings angular-panel ${settingsLocked ? "is-locked" : ""}`}>
       <SectionHeading title="渲染设置" hint={settingsLocked ? "渲染进行中，设置已锁定" : "修改后保存，下一次渲染使用"} />
@@ -506,15 +561,17 @@ function RenderPage({ state, onSettings, onOpenDocument, onStart, onCancel }: { 
         <div className="settings-note warning-note">高级设置只适合排查问题或有特殊导出需求时使用。错误的编码参数可能导致渲染失败或输出无法播放。</div>
         <div className="settings-grid">
           <SettingText label="工作区目录" value={state.settings.ChartRenderWorkspaceDirectory} onChange={(value) => onSettings({ ChartRenderWorkspaceDirectory: value })} disabled={settingsLocked} />
-          <SettingSelect label="编码档位" group="ChartRenderEncoderMode" value={state.settings.ChartRenderEncoderMode} options={["auto-balanced", "fastest", "balanced", "quality", "cpu-compatibility", "custom"]} onChange={(value) => onSettings({ ChartRenderEncoderMode: value })} disabled={settingsLocked} />
-          {showPresets ? <>
-            <SettingSelect label="显卡编码预设" group="ChartRenderHardwarePreset" value={state.settings.ChartRenderHardwarePreset} options={["auto", "p1", "p2", "p3", "p4", "p5", "p6", "p7"]} onChange={(value) => onSettings({ ChartRenderHardwarePreset: value })} disabled={settingsLocked} />
-            <SettingSelect label="CPU 编码预设" group="ChartRenderCpuPreset" value={state.settings.ChartRenderCpuPreset} options={["auto", "ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"]} onChange={(value) => onSettings({ ChartRenderCpuPreset: value })} disabled={settingsLocked} />
-          </> : null}
+          <SettingSwitch label="详细编码设置" description="关闭时只选编码档位；开启后可以指定编码器和它的速度预设。" value={detailedEncoder} onChange={setDetailedEncoder} disabled={settingsLocked} />
+          {detailedEncoder ? <>
+            <SettingSelect label="编码器" group="ChartRenderEncoderDevice" value={encoderDevice} options={["gpu", "cpu", "custom"]} onChange={setEncoderDevice} disabled={settingsLocked} />
+            {isProRes && encoderDevice !== "custom" ? null
+              : encoderDevice === "gpu" ? <SettingSelect label="显卡编码预设" group="ChartRenderHardwarePreset" value={shownHardwarePreset} options={["p1", "p2", "p3", "p4", "p5", "p6", "p7"]} onChange={(value) => onSettings({ ChartRenderHardwarePreset: value })} disabled={settingsLocked} />
+              : encoderDevice === "cpu" ? <SettingSelect label="CPU 编码预设" group="ChartRenderCpuPreset" value={shownCpuPreset} options={["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"]} onChange={(value) => onSettings({ ChartRenderCpuPreset: value })} disabled={settingsLocked} />
+              : <SettingText label="编码方式" value={state.settings.ChartRenderPreset} onChange={(value) => onSettings({ ChartRenderPreset: value })} disabled={settingsLocked} />}
+          </> : <SettingSelect label="编码档位" group="ChartRenderEncoderMode" value={encoderMode === "custom" ? "auto-balanced" : state.settings.ChartRenderEncoderMode} options={["auto-balanced", "fastest", "balanced", "quality", "cpu-compatibility"]} onChange={(value) => onSettings({ ChartRenderEncoderMode: value })} disabled={settingsLocked} />}
           {presetNote ? <InfoBlock text={presetNote} /> : null}
           <SettingNumber label="画质参数（CRF，越小越清晰、文件越大）" value={state.settings.ChartRenderCrf} min={0} max={51} step={1} onChange={(value) => onSettings({ ChartRenderCrf: value })} suffix="" disabled={settingsLocked} />
           <SettingNumber label="视频码率" value={state.settings.ChartRenderBitrateMbps} min={0} max={300} step={1} onChange={(value) => onSettings({ ChartRenderBitrateMbps: value })} suffix="Mbps" disabled={settingsLocked} />
-          {isCustomEncoder ? <SettingText label="编码方式" value={state.settings.ChartRenderPreset} onChange={(value) => onSettings({ ChartRenderPreset: value })} disabled={settingsLocked} /> : null}
           <SettingSelect label="回读格式" group="ChartRenderCaptureFormat" value={state.settings.ChartRenderCaptureFormat} options={["rgba", "bgra"]} onChange={(value) => onSettings({ ChartRenderCaptureFormat: value })} disabled={settingsLocked} />
           <SettingSelect label="音频格式" group="ChartRenderAudioFormat" value={shownAudioFormat} options={["aac", "flac", "alac"]} disabledOptions={disabledAudioFormats} onChange={(value) => onSettings({ ChartRenderAudioFormat: value })} disabled={settingsLocked} />
           <SettingSelect label="渲染预览" group="ChartRenderPreviewMode" value={state.settings.ChartRenderPreviewMode} options={["full", "dim", "minimal"]} onChange={(value) => onSettings({ ChartRenderPreviewMode: value })} disabled={settingsLocked} />

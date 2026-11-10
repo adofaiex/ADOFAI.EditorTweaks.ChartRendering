@@ -39,6 +39,7 @@ export interface SettingsState {
   ChartRenderVideoCodec: string;
   ChartRenderHardwarePreset: string;
   ChartRenderCpuPreset: string;
+  ChartRenderDetailedEncoderSettings: boolean;
   FfmpegCustomPath: string;
 }
 

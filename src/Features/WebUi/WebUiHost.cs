@@ -305,7 +305,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                     ExecuteOnMain(StartRender, context);
                     return;
                 case "/api/render/cancel":
-                    ExecuteOnMain(CancelRender, context);
+                    CancelRenderFromRequestThread(context);
                     return;
                 default:
                     WriteJson(context, 404, Error("Unknown WebUI API route."));
@@ -473,23 +473,36 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             return StateResult();
         }
 
-        private CommandResult CancelRender()
+        // Cancel is answered on the HTTP thread instead of going through ExecuteOnMain. When the encoder
+        // is slower than rendering (for example a slow CPU preset at 3 frames per second), the main
+        // thread spends most of each frame waiting for room in the encoder queue, so a command queued
+        // for it could sit there and the cancel button looked dead. ChartRenderTask.Cancel only sets
+        // an interlocked flag, which those waits check every 50 ms. The reply carries the last state
+        // the main thread published; the main thread publishes the canceling state on its next frame.
+        private void CancelRenderFromRequestThread(HttpListenerContext context)
         {
             ChartRenderTask? task = ChartRenderApi.CurrentTask;
             if (task == null)
             {
                 // A repeated cancel after the task has reached its terminal state is harmless.
-                // Return the final snapshot instead of making the UI report a false failure.
-                return renderTask != null ? StateResult() : new CommandResult(409, Error("没有正在运行的渲染任务。"));
+                WriteJson(context, renderTask != null ? 200 : 409,
+                    renderTask != null ? StateResponse() : Error("没有正在运行的渲染任务。"));
+                return;
             }
 
             if (!task.Cancel() && !task.IsCancellationRequested)
             {
-                return new CommandResult(409, Error("渲染任务无法取消。"));
+                WriteJson(context, 409, Error("渲染任务无法取消。"));
+                return;
             }
 
-            PublishState();
-            return StateResult();
+            Main.Log("[WebUI] Render cancel requested from the settings page.");
+            commands.Enqueue(new MainThreadCommand(() =>
+            {
+                PublishState();
+                return new CommandResult(200, new Dictionary<string, object>());
+            }));
+            WriteJson(context, 200, StateResponse());
         }
 
         private void ObserveRenderTask()
@@ -586,6 +599,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                     case "ChartRenderEncoderMode": settings.ChartRenderEncoderMode = GetString(change.Value, settings.ChartRenderEncoderMode); break;
                     case "ChartRenderHardwarePreset": settings.ChartRenderHardwarePreset = GetString(change.Value, settings.ChartRenderHardwarePreset); break;
                     case "ChartRenderCpuPreset": settings.ChartRenderCpuPreset = GetString(change.Value, settings.ChartRenderCpuPreset); break;
+                    case "ChartRenderDetailedEncoderSettings": settings.ChartRenderDetailedEncoderSettings = GetBool(change.Value, settings.ChartRenderDetailedEncoderSettings); break;
                     case "ChartRenderCaptureFormat": settings.ChartRenderCaptureFormat = GetString(change.Value, settings.ChartRenderCaptureFormat); break;
                     case "ChartRenderCaptureSource": settings.ChartRenderCaptureSource = GetString(change.Value, settings.ChartRenderCaptureSource); break;
                     case "ChartRenderPreviewMode": settings.ChartRenderPreviewMode = GetString(change.Value, settings.ChartRenderPreviewMode); break;

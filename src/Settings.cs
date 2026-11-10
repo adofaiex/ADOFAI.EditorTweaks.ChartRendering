@@ -28,6 +28,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering
         public string ChartRenderEncoderMode = ChartRenderOptionValues.EncoderAutoBalanced;
         public string ChartRenderHardwarePreset = ChartRenderOptionValues.PresetFollowEncoderMode;
         public string ChartRenderCpuPreset = ChartRenderOptionValues.PresetFollowEncoderMode;
+        // Settings page shows the detailed encoder settings (encoder + preset) instead of the simple
+        // encoder mode. The two presets above are only used while this is on.
+        public bool ChartRenderDetailedEncoderSettings;
         public string ChartRenderCaptureFormat = ChartRenderOptionValues.CaptureRgba;
         public string ChartRenderCaptureSource = ChartRenderOptionValues.CaptureSourceCamera;
         public string ChartRenderPreviewMode = ChartRenderOptionValues.PreviewFull;
@@ -78,6 +81,12 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             ChartRenderEncoderMode = ChartRenderOptionValues.NormalizeEncoderMode(ChartRenderEncoderMode);
             ChartRenderHardwarePreset = ChartRenderOptionValues.NormalizeHardwarePreset(ChartRenderHardwarePreset);
             ChartRenderCpuPreset = ChartRenderOptionValues.NormalizeCpuPreset(ChartRenderCpuPreset);
+            // The custom encoder mode only exists in the detailed encoder view; settings saved before
+            // that view existed keep their custom mode by opening it.
+            if (ChartRenderEncoderMode == ChartRenderOptionValues.EncoderCustom)
+            {
+                ChartRenderDetailedEncoderSettings = true;
+            }
             ChartRenderCaptureFormat = ChartRenderOptionValues.NormalizeCaptureFormat(ChartRenderCaptureFormat);
             ChartRenderCaptureSource = ChartRenderOptionValues.NormalizeCaptureSource(ChartRenderCaptureSource);
             ChartRenderPreviewMode = ChartRenderOptionValues.NormalizePreviewMode(ChartRenderPreviewMode);
@@ -108,6 +117,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             ChartRenderEncoderMode = ChartRenderOptionValues.EncoderAutoBalanced;
             ChartRenderHardwarePreset = ChartRenderOptionValues.PresetFollowEncoderMode;
             ChartRenderCpuPreset = ChartRenderOptionValues.PresetFollowEncoderMode;
+            ChartRenderDetailedEncoderSettings = false;
             ChartRenderCaptureFormat = ChartRenderOptionValues.CaptureRgba;
             ChartRenderCaptureSource = ChartRenderOptionValues.CaptureSourceCamera;
             ChartRenderPreviewMode = ChartRenderOptionValues.PreviewFull;

@@ -40,6 +40,10 @@ button { cursor: pointer; }
 .brand-page { color: #b7cde2; font-size: 17px; }
 .topbar-actions { gap: 12px; color: var(--muted); font-size: 12px; }
 .connection-dot, .status-led { width: 7px; height: 7px; display: inline-block; border-radius: 50%; background: var(--warning); box-shadow: 0 0 8px rgba(240, 191, 105, 0.5); }
+/* Floats under the top bar so it does not add a row to the .app-shell grid. */
+.connection-lost-banner { position: fixed; top: 78px; left: 50%; transform: translateX(-50%); z-index: 50; width: min(760px, calc(100vw - 48px)); padding: 14px 18px; display: flex; gap: 12px; align-items: flex-start; color: var(--text); background: rgba(58, 12, 24, 0.95); border: 1px solid var(--danger); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); font-size: 13px; line-height: 1.6; }
+.connection-lost-banner > svg { flex: none; margin-top: 3px; color: var(--danger); font-size: 18px; }
+.connection-lost-banner strong { display: block; margin-bottom: 2px; color: var(--danger); font-size: 14px; }
 .connection-dot.is-online, .status-led { background: var(--success); box-shadow: 0 0 8px rgba(63, 224, 180, 0.6); }
 .connection-retry { display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; color: var(--accent); border: 1px solid rgba(61, 187, 226, 0.45); background: rgba(7, 45, 70, 0.7); font-size: 11px; }
 .connection-retry svg { font-size: 13px; }
