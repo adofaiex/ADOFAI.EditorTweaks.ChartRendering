@@ -34,6 +34,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         };
 
         private const int ProbeTimeoutMilliseconds = 10000;
+        // Bump when KnownEncoders changes so caches saved by an older build are probed again.
+        private const int CapabilitySchemaVersion = 2;
 
         private static readonly object Sync = new object();
         private static readonly Dictionary<string, bool> savedResults = new Dictionary<string, bool>(StringComparer.Ordinal);
@@ -314,7 +316,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             {
             }
 
-            return SystemInfo.graphicsDeviceVendor + "|" + SystemInfo.graphicsDeviceName + "|"
+            return "v" + CapabilitySchemaVersion + "|"
+                + SystemInfo.graphicsDeviceVendor + "|" + SystemInfo.graphicsDeviceName + "|"
                 + ffmpegPath.ToLowerInvariant() + "|" + ffmpegStamp;
         }
 
