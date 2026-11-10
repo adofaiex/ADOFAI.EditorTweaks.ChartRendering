@@ -2,6 +2,32 @@
 
 本文档记录 ADOFAI Editor Tweaks 的用户可见改动。版本号来自 `Info.json`。
 
+## 1.1.0（ChartRendering 独立版，2026-11-11）
+
+### 新增
+
+- 自带 FFmpeg 从 essentials 换成 gyan.dev 的 9.0.2 full build，包含 `libsvtav1`、`libvvenc`、`libaom-av1`、`libx264`、`libx265` 等编码器。
+- 新增 H.266/VVC 编码格式（实验性、不推荐、仅供尝鲜）。只有 CPU 编码，1080p60 大约每秒数帧，播放器和剪辑软件支持有限。
+- 新增恒定比特率（CBR）开关。打开后按设置的视频码率输出，码率为 0 时使用推荐码率；画质参数（CRF）不再生效。
+
+### 优化
+
+- AV1 在 RTX 30 系及更早的显卡上会使用 full build 自带的 `libsvtav1`，比原来的 `libaom-av1` 快很多。
+- 设置页新增编码器检测项 `libvvenc`，并显示这台电脑实际会使用的编码器。
+- 编码器检测缓存会在 FFmpeg 变化后自动重测。
+
+### 修复
+
+- 构建脚本发现旧的 essentials 版 FFmpeg 时会自动替换，不再因为 `ffmpeg.exe` 已存在而跳过。
+- FFmpeg 完整版压缩包改用 `curl.exe` 下载、Windows 自带的 `tar.exe` 解压，不再要求额外安装 7-Zip。
+
+### 注意
+
+- H.266/VVC 不支持恒定比特率，开启 CBR 时会自动退回 VBR。
+- ProRes 的码率由 profile 决定，CBR 对它不生效。
+- H.264/HEVC 在 MP4 中的 CBR 是受 VBV 限制的近似恒定码率，不是逐段完全不变。
+- full build 的 `ffmpeg.exe` 约 228 MB，安装包会明显变大。
+
 ## 1.4.7
 
 ### 优化
