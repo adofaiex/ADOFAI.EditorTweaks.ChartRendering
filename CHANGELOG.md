@@ -4,29 +4,59 @@
 
 ## 1.1.0（ChartRendering 独立版，2026-11-11）
 
+自 1.0.3 起，本版本移植了 CheryTools AET Recorder 的渲染改进，并新增完整版 FFmpeg、H.266/VVC 和恒定比特率。
+
 ### 新增
 
-- 自带 FFmpeg 从 essentials 换成 gyan.dev 的 9.0.2 full build，包含 `libsvtav1`、`libvvenc`、`libaom-av1`、`libx264`、`libx265` 等编码器。
-- 新增 H.266/VVC 编码格式（实验性、不推荐、仅供尝鲜）。只有 CPU 编码，1080p60 大约每秒数帧，播放器和剪辑软件支持有限。
-- 新增恒定比特率（CBR）开关。打开后按设置的视频码率输出，码率为 0 时使用推荐码率；画质参数（CRF）不再生效。
+- **视频编码格式**：H.264、HEVC/H.265、AV1、ProRes 422 HQ。显卡支持时使用 NVENC，否则回退 CPU 编码；HEVC 在 MP4/MOV 中使用 `hvc1` 标签，ProRes 使用 MOV。
+- **游戏画面离屏渲染**：游戏画面模式把摄像机和屏幕空间画布重定向到离屏纹理，可按设置输出高于显示器的分辨率，并包含游戏内界面；屏幕上显示带黑边的预览。
+- **CRF 恒定质量**：码率为“自动”时只由 CRF 控制（NVENC 恒定 QP），不再受编码级别码率上限约束。
+- **显卡/CPU 编码预设**：NVENC p1–p7；x264/x265 ultrafast–veryslow；AV1 CPU 编码器按同等速度换算。
+- **编码器检测**：启动时在后台探测这台电脑能用的编码器，结果显示在总览页和渲染设置里；显卡、驱动或 FFmpeg 变化后自动重测，也可以手动重新检测。
+- **恒定比特率（CBR）**：按填写的视频码率输出，码率为 0 时使用推荐码率，CRF 不再生效。NVENC 使用真正的 CBR，CPU 编码器使用受 VBV 限制的近似 CBR。
+- **H.266/VVC**：实验性编码格式，使用 `libvvenc`。只有 CPU 编码，输出 10-bit，支持 MP4/MKV/MOV；设置页标记为“实验性、不推荐、仅供尝鲜”。
+- **完整版 FFmpeg**：自带 gyan.dev 9.0.2 full build，新增 `libsvtav1`、`libvvenc` 等编码器，AV1 在 RTX 30 系及更早显卡上不再只能使用很慢的 `libaom-av1`。
+- **渲染日志**：每次渲染单独保存到 `Workspace\Logs\render_*.log`，保留最近 10 份，记录编码器、FFmpeg 参数、内存和歌曲状态。
+- **稳定性**：渲染结束后自动回到编辑器；渲染中关闭游戏会被拦截；网页与游戏断开时显示横幅并提示渲染可能被中断。
+- **自定义 FFmpeg**：支持自定义 `ffmpeg.exe` 路径和自定义合成参数。
+- **公共 API 新增**：`ChartRenderVideoCodec`、`ChartRenderRequest.VideoCodec`、`ChartRenderHardwarePreset`、`ChartRenderCpuPreset`、`ChartRenderVideoCodec.Vvc`、`ChartRenderRequest.ConstantBitrate`。全部向后兼容，默认值保持旧行为。
 
 ### 优化
 
-- AV1 在 RTX 30 系及更早的显卡上会使用 full build 自带的 `libsvtav1`，比原来的 `libaom-av1` 快很多。
-- 设置页新增编码器检测项 `libvvenc`，并显示这台电脑实际会使用的编码器。
-- 编码器检测缓存会在 FFmpeg 变化后自动重测。
+- 取消渲染更可靠：取消时只结束 FFmpeg 进程，不在主线程 Dispose；后台线程 10 秒不退出就放弃等待；删除半成品视频。
+- 合成阶段进度更准确：画面捕获 0–90%，完成编码 90–92%，合成音频 92–100%；写入文件阶段显示“请勿关闭游戏”。
+- 合成先写 `xxx.mp4.part`，成功后再改名，导出目录里正式名字的文件一定是完整的。
+- ProRes 改用 `prores_aw`，比原来的 `prores_ks -bits_per_mb 8000` 快约 3 倍，体积也更合理。
+- 帧缓冲复用：不再每帧把整帧（4K 约 32 MB）复制一份用于重复帧。
+- 编码设置分为简洁/详细两种视图：简洁视图只选编码档位；详细视图先选编码器（显卡 / CPU / 自定义），只显示对应的预设。
+- 设置页选 ProRes 时自动改为 MOV、FLAC 自动改为 ALAC，并把不兼容的选项变灰。
+- 编码器检测结果会缓存；FFmpeg 或显卡变化后自动重测。
+- 构建脚本发现旧的 essentials 版 FFmpeg 时会自动替换；完整版压缩包用 `curl.exe` 下载、Windows 自带的 `tar.exe` 解压，不再要求安装 7-Zip。
+- 发行包附带 `LICENSE` 和 `ThirdParty/FFmpeg/GPL-3.0.txt`。
 
 ### 修复
 
-- 构建脚本发现旧的 essentials 版 FFmpeg 时会自动替换，不再因为 `ffmpeg.exe` 已存在而跳过。
-- FFmpeg 完整版压缩包改用 `curl.exe` 下载、Windows 自带的 `tar.exe` 解压，不再要求额外安装 7-Zip。
+- 选择 HEVC / AV1 / ProRes 后实际仍输出 H.264（CT 只把编码格式写进请求，没有写回渲染设置）。
+- ProRes 在 MP4 临时文件上写头失败；ProRes 现在使用 `.mov` 临时文件。
+- MOV + FLAC 合成失败；MOV 遇到 FLAC 自动改用 ALAC。
+- 加载谱面后第一次之后的渲染只有音效、没有音乐（`AudioSettings.Reset` 丢掉了运行时加载的歌曲数据）。
+- 星球自转、彩虹星球、Miss 闪光、打击停顿、镜头后坐、文字装饰抖动在视频里速度过快。
+- 渲染中取消按钮无响应（`BeginErrorReadLine` 占住 ThreadPool 线程）。
+- CPU 慢预设下取消按钮无响应（主线程在等编码队列，取消请求排不到）。
+- 合成阶段进度条停在 100%，玩家关闭游戏后留下损坏视频。
+- 渲染结束后需要手动按 Esc 才能回到编辑器。
+- “Finalizing video”阶段文字未翻译。
+- 自定义编码档位固定用 H.264，但像素格式仍按 ProRes 设置，组合使用会报错。
+- 旧版 essentials FFmpeg 已存在时构建脚本不会替换，导致 AV1 只能落到很慢的 `libaom-av1`。
 
 ### 注意
 
-- H.266/VVC 不支持恒定比特率，开启 CBR 时会自动退回 VBR。
-- ProRes 的码率由 profile 决定，CBR 对它不生效。
+- H.266/VVC 只有 CPU 编码，1080p60 大约每秒数帧，播放器和剪辑软件支持有限；设置页标为实验性、不推荐、仅供尝鲜。它不支持 CBR，开启 CBR 时会自动退回 VBR。
+- ProRes 的码率由 profile 决定，CBR 对它不生效；ProRes 只能保存为 MOV，音频不能用 FLAC。
 - H.264/HEVC 在 MP4 中的 CBR 是受 VBV 限制的近似恒定码率，不是逐段完全不变。
-- full build 的 `ffmpeg.exe` 约 228 MB，安装包会明显变大。
+- AV1 NVENC 需要 RTX 40 系或更新的显卡；更老的 NVIDIA 显卡会使用 CPU 的 `libsvtav1`。
+- 音频缓冲大于 256 时，渲染会临时切换 DSP 缓冲并重新加载歌曲；其他 mod 自己加载的音效（例如 Creplay 的按键音）可能需要重进谱面才能恢复。
+- full build 的 `ffmpeg.exe` 约 228 MB，安装包会明显变大（Release zip 约 85 MB）。
 
 ## 1.4.7
 
