@@ -80,6 +80,7 @@ const settingLabels: Record<string, Record<string, string>> = {
     h264: "H.264（兼容性最好，推荐）",
     hevc: "HEVC / H.265（体积更小）",
     av1: "AV1（体积最小，编码较慢）",
+    vvc: "H.266 / VVC（实验性，不推荐，编码极慢）",
     prores: "ProRes 422 HQ（剪辑用，体积很大）",
   },
   ChartRenderEncoderDevice: {
@@ -136,6 +137,14 @@ function applyContainerRules(current: SettingsState, requested: Partial<Settings
   if (next.ChartRenderVideoCodec.toLowerCase() === "prores" && next.ChartRenderVideoFormat.toLowerCase() !== "mov") {
     changes.ChartRenderVideoFormat = "mov";
     notes.push(`${proResOnlyMov}，视频输出格式已改为 MOV。`);
+  }
+
+  const codec = next.ChartRenderVideoCodec.toLowerCase();
+  if (next.ChartRenderConstantBitrate && (codec === "prores" || codec === "vvc")) {
+    changes.ChartRenderConstantBitrate = false;
+    notes.push(codec === "prores"
+      ? "ProRes 不支持恒定比特率，已关闭 CBR。"
+      : "H.266/VVC 不支持恒定比特率，已关闭 CBR。");
   }
 
   const format = (changes.ChartRenderVideoFormat ?? next.ChartRenderVideoFormat).toLowerCase();
@@ -481,10 +490,19 @@ function RenderPage({ state, offline, onSettings, onOpenDocument, onStart, onCan
     ? "编码器为“自定义参数”时固定使用 H.264，视频编码格式的选择不会生效。"
     : videoCodec === "prores"
       ? "ProRes 文件非常大，适合导入剪辑软件；只能保存为 MOV，音频不能用 FLAC。"
-      : null;
+      : videoCodec === "vvc"
+        ? "H.266/VVC 是实验性格式：只有 CPU 编码，1080p60 大约每秒数帧，且大多数播放器、剪辑软件和网站不支持。仅供尝鲜。"
+        : null;
   // Settings saved before these rules existed may still pair ProRes with MP4 or MOV with FLAC; the
   // fields show what the render will really use.
   const isProRes = videoCodec === "prores";
+  const isVvc = videoCodec === "vvc";
+  const constantBitrate = state.settings.ChartRenderConstantBitrate;
+  const cbrNote = constantBitrate
+    ? isProRes || isVvc
+      ? "所选编码格式不支持恒定比特率，渲染时会自动改用 VBR。"
+      : "恒定比特率会按“视频码率”输出，画质参数不再生效；H.264/HEVC 是受 VBV 限制的近似 CBR，不是逐段完全恒定。"
+    : null;
   const shownVideoFormat = isProRes ? "mov" : state.settings.ChartRenderVideoFormat;
   const outputsMov = shownVideoFormat.toLowerCase() === "mov";
   const shownAudioFormat = outputsMov && state.settings.ChartRenderAudioFormat.toLowerCase() === "flac" ? "alac" : state.settings.ChartRenderAudioFormat;
@@ -494,7 +512,7 @@ function RenderPage({ state, offline, onSettings, onOpenDocument, onStart, onCan
   // mod in this view). Detailed: pick the encoder, then only that encoder's preset is shown.
   const detailedEncoder = state.settings.ChartRenderDetailedEncoderSettings;
   const encoderMode = state.settings.ChartRenderEncoderMode.toLowerCase();
-  const encoderDevice = encoderMode === "custom" ? "custom" : encoderMode === "cpu-compatibility" ? "cpu" : "gpu";
+  const encoderDevice = isVvc ? "cpu" : encoderMode === "custom" ? "custom" : encoderMode === "cpu-compatibility" ? "cpu" : "gpu";
   const modeDefaults = encoderPresetDefaults[encoderMode] ?? encoderPresetDefaults["auto-balanced"];
   const shownHardwarePreset = state.settings.ChartRenderHardwarePreset.toLowerCase() === "auto" ? modeDefaults.hardware : state.settings.ChartRenderHardwarePreset;
   const shownCpuPreset = state.settings.ChartRenderCpuPreset.toLowerCase() === "auto" ? modeDefaults.cpu : state.settings.ChartRenderCpuPreset;
@@ -508,19 +526,24 @@ function RenderPage({ state, offline, onSettings, onOpenDocument, onStart, onCan
   const detected = Object.keys(state.encoders.results).length > 0;
   const predictedEncoder = predictEncoder(state.settings, state.encoders);
   const hasNvenc = nvencEncoders.some((name) => state.encoders.results[name]);
-  const wantsGpu = encoderMode !== "cpu-compatibility" && encoderMode !== "custom" && !isProRes;
+  const wantsGpu = encoderMode !== "cpu-compatibility" && encoderMode !== "custom" && !isProRes && !isVvc;
   const fellBackToCpu = predictedEncoder !== null && predictedEncoder !== "none" && wantsGpu && !nvencEncoders.includes(predictedEncoder);
   const encoderNote = predictedEncoder === null
     ? (state.encoders.status === "detecting" ? "正在检测这台电脑能用的编码器…" : null)
     : predictedEncoder === "none"
-      ? "这台电脑没有可用的 AV1 编码器，渲染会失败，请换一种视频编码格式。"
+      ? `这台电脑没有可用的 ${isVvc ? "H.266/VVC" : "AV1"} 编码器，渲染会失败，请换一种视频编码格式。`
       : `这台电脑将使用：${encoderLabels[predictedEncoder] ?? predictedEncoder}${fellBackToCpu ? "。显卡不支持这种编码格式，会改用 CPU 编码，速度明显变慢。" : "。"}`;
-  const disabledEncoderDevices = detected && !hasNvenc ? { gpu: "没有检测到可用的 NVIDIA 显卡编码" } : undefined;
+  const disabledEncoderDevices = {
+    ...(detected && !hasNvenc ? { gpu: "没有检测到可用的 NVIDIA 显卡编码" } : {}),
+    ...(isVvc ? { gpu: "H.266/VVC 只有 CPU 编码", custom: "H.266/VVC 不能使用自定义参数" } : {}),
+  };
   const presetNote = !detailedEncoder
     ? null
     : isProRes && encoderDevice !== "custom"
       ? "ProRes 没有速度预设，编码器和预设的选择不适用。"
-      : encoderDevice === "gpu"
+      : isVvc
+        ? "H.266/VVC 只有 CPU 编码，速度极慢；较慢的预设会让渲染时间长到无法接受，建议先用 10 秒片段测试。"
+        : encoderDevice === "gpu"
         ? `没有 NVIDIA 显卡、或显卡不支持所选编码格式时（例如 RTX 30 系及更早的显卡不支持 AV1），会自动改用 CPU 编码，届时使用 CPU 预设 ${shownCpuPreset}。`
         : encoderDevice === "cpu" && slowCpuPresets.includes(shownCpuPreset.toLowerCase())
           ? "注意：较慢的 CPU 预设会明显拖慢整个渲染，因为每一帧都要等编码器处理完。1080p60 下 slow 大约只有每秒几帧。"
@@ -563,7 +586,7 @@ function RenderPage({ state, offline, onSettings, onOpenDocument, onStart, onCan
         <SettingNumber label="帧率" value={state.settings.ChartRenderFps} min={1} max={240} step={1} onChange={(value) => onSettings({ ChartRenderFps: value })} suffix="帧/秒" disabled={settingsLocked} />
         <SettingNumber label="结束后延迟停止" value={state.settings.ChartRenderCompletionTailSeconds} min={0} step={0.1} onChange={(value) => onSettings({ ChartRenderCompletionTailSeconds: value })} suffix="秒" disabled={settingsLocked} />
         <SettingSelect label="视频输出格式" group="ChartRenderVideoFormat" value={shownVideoFormat} options={["mp4", "mkv", "mov"]} disabledOptions={disabledVideoFormats} onChange={(value) => onSettings({ ChartRenderVideoFormat: value })} disabled={settingsLocked} />
-        <SettingSelect label="视频编码格式" group="ChartRenderVideoCodec" value={state.settings.ChartRenderVideoCodec} options={["h264", "hevc", "av1", "prores"]} onChange={(value) => onSettings({ ChartRenderVideoCodec: value })} disabled={settingsLocked} />
+        <SettingSelect label="视频编码格式" group="ChartRenderVideoCodec" value={state.settings.ChartRenderVideoCodec} options={["h264", "hevc", "av1", "vvc", "prores"]} onChange={(value) => onSettings({ ChartRenderVideoCodec: value })} disabled={settingsLocked} />
         {codecNote ? <InfoBlock text={codecNote} /> : null}
         {encoderNote ? <InfoBlock text={encoderNote} /> : null}
         <SettingSwitch label="渲染时显示判定文字" description="控制成品视频中是否显示 Perfect、Early、Late 等判定文字。" value={state.settings.ChartRenderShowHitJudgments} onChange={(value) => onSettings({ ChartRenderShowHitJudgments: value })} disabled={settingsLocked} />
@@ -583,8 +606,10 @@ function RenderPage({ state, offline, onSettings, onOpenDocument, onStart, onCan
               : <SettingText label="编码方式" value={state.settings.ChartRenderPreset} onChange={(value) => onSettings({ ChartRenderPreset: value })} disabled={settingsLocked} />}
           </> : <SettingSelect label="编码档位" group="ChartRenderEncoderMode" value={encoderMode === "custom" ? "auto-balanced" : state.settings.ChartRenderEncoderMode} options={["auto-balanced", "fastest", "balanced", "quality", "cpu-compatibility"]} onChange={(value) => onSettings({ ChartRenderEncoderMode: value })} disabled={settingsLocked} />}
           {presetNote ? <InfoBlock text={presetNote} /> : null}
-          <SettingNumber label="画质参数（CRF，越小越清晰、文件越大）" value={state.settings.ChartRenderCrf} min={0} max={51} step={1} onChange={(value) => onSettings({ ChartRenderCrf: value })} suffix="" disabled={settingsLocked} />
+          <SettingNumber label="画质参数（CRF，越小越清晰、文件越大）" value={state.settings.ChartRenderCrf} min={0} max={51} step={1} onChange={(value) => onSettings({ ChartRenderCrf: value })} suffix="" disabled={settingsLocked || constantBitrate} />
           <SettingNumber label="视频码率" value={state.settings.ChartRenderBitrateMbps} min={0} max={300} step={1} onChange={(value) => onSettings({ ChartRenderBitrateMbps: value })} suffix="Mbps" disabled={settingsLocked} />
+          <SettingSwitch label="恒定比特率（CBR）" description="按“视频码率”输出，画质参数不再生效；码率为 0 时使用自动推荐码率。" value={constantBitrate} onChange={(value) => onSettings({ ChartRenderConstantBitrate: value })} disabled={settingsLocked} />
+          {cbrNote ? <InfoBlock text={cbrNote} /> : null}
           <SettingSelect label="回读格式" group="ChartRenderCaptureFormat" value={state.settings.ChartRenderCaptureFormat} options={["rgba", "bgra"]} onChange={(value) => onSettings({ ChartRenderCaptureFormat: value })} disabled={settingsLocked} />
           <SettingSelect label="音频格式" group="ChartRenderAudioFormat" value={shownAudioFormat} options={["aac", "flac", "alac"]} disabledOptions={disabledAudioFormats} onChange={(value) => onSettings({ ChartRenderAudioFormat: value })} disabled={settingsLocked} />
           <SettingSelect label="渲染预览" group="ChartRenderPreviewMode" value={state.settings.ChartRenderPreviewMode} options={["full", "dim", "minimal"]} onChange={(value) => onSettings({ ChartRenderPreviewMode: value })} disabled={settingsLocked} />
@@ -760,9 +785,10 @@ const encoderLabels: Record<string, string> = {
   libx265: "HEVC CPU 编码（x265）",
   libsvtav1: "AV1 CPU 编码（SVT-AV1，较快）",
   "libaom-av1": "AV1 CPU 编码（libaom，很慢）",
+  libvvenc: "H.266/VVC CPU 编码（VVenC，实验性，很慢）",
   prores_aw: "ProRes 422 HQ",
 };
-const encoderOrder = ["h264_nvenc", "hevc_nvenc", "av1_nvenc", "libx264", "libx265", "libsvtav1", "libaom-av1", "prores_aw"];
+const encoderOrder = ["h264_nvenc", "hevc_nvenc", "av1_nvenc", "libx264", "libx265", "libsvtav1", "libaom-av1", "libvvenc", "prores_aw"];
 const nvencEncoders = ["h264_nvenc", "hevc_nvenc", "av1_nvenc"];
 
 // The encoder FfmpegEncoder will pick for these settings on this computer (same order of fallbacks),
@@ -781,6 +807,7 @@ function predictEncoder(settings: SettingsState, encoders: EncoderState): string
   switch (settings.ChartRenderVideoCodec.toLowerCase()) {
     case "hevc": return !forceCpu && results.hevc_nvenc ? "hevc_nvenc" : "libx265";
     case "av1": return !forceCpu && results.av1_nvenc ? "av1_nvenc" : results.libsvtav1 ? "libsvtav1" : results["libaom-av1"] ? "libaom-av1" : "none";
+    case "vvc": return results.libvvenc ? "libvvenc" : "none";
     case "prores": return "prores_aw";
     default: return !forceCpu && results.h264_nvenc ? "h264_nvenc" : "libx264";
   }

@@ -28,6 +28,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private readonly string customMuxArgs;
         private readonly float audioSyncOffsetMs;
         private readonly string videoCodec;
+        // Target the configured bitrate instead of constant quality. Best effort per encoder.
+        private readonly bool constantBitrate;
         // Explicit presets, or "auto" to use the preset the encoder mode picks.
         private readonly string hardwarePreset;
         private readonly string cpuPreset;
@@ -68,7 +70,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             string customMuxArgs,
             string videoCodec = ChartRenderOptionValues.VideoCodecH264,
             string hardwarePreset = ChartRenderOptionValues.PresetFollowEncoderMode,
-            string cpuPreset = ChartRenderOptionValues.PresetFollowEncoderMode)
+            string cpuPreset = ChartRenderOptionValues.PresetFollowEncoderMode,
+            bool constantBitrate = false)
         {
             this.ffmpegPath = ffmpegPath;
             this.tempVideoPath = tempVideoPath;
@@ -89,6 +92,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             this.videoCodec = ChartRenderOptionValues.NormalizeVideoCodec(videoCodec);
             this.hardwarePreset = ChartRenderOptionValues.NormalizeHardwarePreset(hardwarePreset);
             this.cpuPreset = ChartRenderOptionValues.NormalizeCpuPreset(cpuPreset);
+            this.constantBitrate = constantBitrate;
         }
 
         public string EncoderName { get; private set; } = "unknown";
@@ -97,7 +101,12 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         {
             // Built first: it decides effectiveVideoCodec, which the pixel format depends on.
             string encoderArgs = GetVideoEncoderArguments();
-            string pixelFormat = effectiveVideoCodec == ChartRenderOptionValues.VideoCodecProRes ? "yuv422p10le" : "yuv420p";
+            // ProRes needs 4:2:2 10-bit; VVC (libvvenc) only accepts 10-bit 4:2:0 input.
+            string pixelFormat = effectiveVideoCodec == ChartRenderOptionValues.VideoCodecProRes
+                ? "yuv422p10le"
+                : effectiveVideoCodec == ChartRenderOptionValues.VideoCodecVvc
+                    ? "yuv420p10le"
+                    : "yuv420p";
             string args = "-y -f rawvideo -pixel_format " + inputPixelFormat + " "
                 + "-video_size " + width + "x" + height + " "
                 + "-framerate " + fps + " "
@@ -112,7 +121,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 + " cpuPreset=" + cpuPreset
                 + " input=" + inputPixelFormat
                 + " verticalFlip=" + flipVertically
-                + " rate=" + (UsesConstantQuality() ? "crf " + ClampCrf() : GetTargetBitrateMbps() + "M")
+                + " rate=" + DescribeRateControl()
                 + " queueFrames=" + queueCapacityFrames
                 + " args=" + args);
             process = StartVideoProcess(args);
@@ -473,6 +482,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     return GetHevcEncoderArguments();
                 case ChartRenderOptionValues.VideoCodecAv1:
                     return GetAv1EncoderArguments();
+                case ChartRenderOptionValues.VideoCodecVvc:
+                    return GetVvcEncoderArguments();
                 case ChartRenderOptionValues.VideoCodecProRes:
                     return GetProResEncoderArguments();
                 default:
@@ -493,7 +504,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             string x264Preset = GetX264Preset();
             EncoderName = "libx264 " + x264Preset;
             Main.Log("Chart renderer using libx264 preset " + x264Preset + ".");
-            return "-c:v libx264 -preset " + Quote(x264Preset) + " " + GetX264BitrateArguments() + " -g " + GetGopSize();
+            return "-c:v libx264 -preset " + Quote(x264Preset) + " " + GetCpuBitrateArguments() + " -g " + GetGopSize();
         }
 
         private string GetHevcEncoderArguments()
@@ -510,12 +521,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             string x265Preset = GetX264Preset();
             EncoderName = "libx265 " + x265Preset;
             Main.Log("Chart renderer using libx265 preset " + x265Preset + ".");
-            return "-c:v libx265 -preset " + Quote(x265Preset) + " " + GetX264BitrateArguments() + " -g " + GetGopSize();
+            return "-c:v libx265 -preset " + Quote(x265Preset) + " " + GetCpuBitrateArguments(hevc: true) + " -g " + GetGopSize();
         }
 
-        // AV1 NVENC needs an RTX 40 series or newer. The bundled FFmpeg (gyan.dev essentials) has no
-        // libsvtav1, so libaom-av1 is the CPU fallback there; libsvtav1 is used when a custom FFmpeg
-        // provides it, since it is much faster.
+        // AV1 NVENC needs an RTX 40 series or newer. The bundled full FFmpeg provides libsvtav1, which
+        // is much faster than libaom-av1; libaom remains the fallback for custom FFmpeg builds without it.
         private string GetAv1EncoderArguments()
         {
             if (!ForcesCpuEncoder() && IsEncoderAvailable("av1_nvenc"))
@@ -529,10 +539,28 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             if (IsEncoderAvailable("libsvtav1"))
             {
                 int svtPreset = GetSvtAv1Preset();
-                EncoderName = "libsvtav1 preset " + svtPreset;
-                Main.Log("Chart renderer using libsvtav1 preset " + svtPreset + ".");
-                // SVT-AV1 rejects CRF 0.
-                string rate = UsesConstantQuality() ? "-crf " + Math.Max(1, ClampCrf()) : "-b:v " + GetTargetBitrateMbps() + "M";
+                EncoderName = "libsvtav1 preset " + svtPreset + (UsesConstantBitrate() ? " (CBR)" : string.Empty);
+                Main.Log("Chart renderer using libsvtav1 preset " + svtPreset + (UsesConstantBitrate() ? " with CBR." : "."));
+                string rate;
+                if (UsesConstantBitrate())
+                {
+                    // SVT-AV1 only supports CBR in low-delay mode (no B-frames). The bitrate is
+                    // still best effort, but it follows the requested target closely.
+                    int target = GetTargetBitrateMbps();
+                    rate = "-svtav1-params rc=2:pred-struct=1 -b:v " + target + "M"
+                        + " -maxrate " + target + "M"
+                        + " -bufsize " + ChartRenderBitratePresets.GetBufferSizeMbps(target) + "M";
+                }
+                else if (UsesConstantQuality())
+                {
+                    // SVT-AV1 rejects CRF 0.
+                    rate = "-crf " + Math.Max(1, ClampCrf());
+                }
+                else
+                {
+                    rate = "-b:v " + GetTargetBitrateMbps() + "M";
+                }
+
                 return "-c:v libsvtav1 -preset " + svtPreset + " " + rate + " -g " + GetGopSize();
             }
 
@@ -540,9 +568,26 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             {
                 int cpuUsed = GetAomCpuUsed();
                 string usage = cpuUsed >= 5 ? "realtime" : "good";
-                EncoderName = "libaom-av1 " + usage + " cpu-used " + cpuUsed;
+                EncoderName = "libaom-av1 " + usage + " cpu-used " + cpuUsed + (UsesConstantBitrate() ? " (CBR)" : string.Empty);
                 Main.Log("Chart renderer using libaom-av1 (" + usage + ", cpu-used " + cpuUsed + "). AV1 on the CPU is slow.");
-                string rate = UsesConstantQuality() ? "-crf " + ClampCrf() + " -b:v 0" : "-b:v " + GetTargetBitrateMbps() + "M";
+                string rate;
+                if (UsesConstantBitrate())
+                {
+                    int target = GetTargetBitrateMbps();
+                    rate = "-b:v " + target + "M"
+                        + " -minrate " + target + "M"
+                        + " -maxrate " + target + "M"
+                        + " -bufsize " + ChartRenderBitratePresets.GetBufferSizeMbps(target) + "M";
+                }
+                else if (UsesConstantQuality())
+                {
+                    rate = "-crf " + ClampCrf() + " -b:v 0";
+                }
+                else
+                {
+                    rate = "-b:v " + GetTargetBitrateMbps() + "M";
+                }
+
                 return "-c:v libaom-av1 -usage " + usage + " -cpu-used " + cpuUsed + " -row-mt 1 -tiles 2x2 " + rate + " -g " + GetGopSize();
             }
 
@@ -550,11 +595,55 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 + "and this FFmpeg has neither libsvtav1 nor libaom-av1. Choose another video codec.");
         }
 
+        // H.266/VVC is experimental: only libvvenc (CPU) exists, it is very slow, and most players
+        // cannot open the result. VVenC only accepts 10-bit input (BeginVideo uses yuv420p10le).
+        // FFmpeg's libvvenc wrapper exposes VBR/ABR but no CBR mode, so CBR requests fall back to VBR.
+        private string GetVvcEncoderArguments()
+        {
+            if (!IsEncoderAvailable("libvvenc"))
+            {
+                throw new InvalidOperationException("No H.266/VVC encoder is available: this FFmpeg does not provide libvvenc. "
+                    + "Use the bundled full FFmpeg or choose another video codec.");
+            }
+
+            string vvcPreset = GetVvcPreset();
+            string rate;
+            if (constantBitrate)
+            {
+                int target = GetTargetBitrateMbps();
+                rate = "-b:v " + target + "M"
+                    + " -maxrate " + ChartRenderBitratePresets.GetMaxRateMbps(target) + "M"
+                    + " -bufsize " + ChartRenderBitratePresets.GetBufferSizeMbps(target) + "M";
+                Main.Log("H.266/VVC does not support constant bitrate in this FFmpeg build; using VBR at " + target + " Mbps.");
+                ChartRenderDiagnostics.Log("H.266/VVC CBR requested; libvvenc only supports VBR, so VBR is used.");
+            }
+            else if (UsesConstantQuality())
+            {
+                rate = "-qp " + GetVvcQp();
+            }
+            else
+            {
+                int target = GetTargetBitrateMbps();
+                rate = "-b:v " + target + "M"
+                    + " -maxrate " + ChartRenderBitratePresets.GetMaxRateMbps(target) + "M"
+                    + " -bufsize " + ChartRenderBitratePresets.GetBufferSizeMbps(target) + "M";
+            }
+
+            EncoderName = "libvvenc " + vvcPreset + (constantBitrate ? " (VBR)" : string.Empty);
+            Main.Log("Chart renderer using libvvenc preset " + vvcPreset + ". H.266/VVC is experimental and very slow.");
+            return "-c:v libvvenc -preset " + vvcPreset + " " + rate + " -period 2";
+        }
+
         // prores_aw writes the same ProRes 422 HQ profile about three times faster than prores_ks,
         // which made ProRes renders slower than CPU AV1. CT's "-bits_per_mb 8000" is not used: it
         // raised the bitrate to about 880 Mbps at 1080p60, twice the usual HQ rate.
         private string GetProResEncoderArguments()
         {
+            if (constantBitrate)
+            {
+                ChartRenderDiagnostics.Log("ProRes ignores the constant bitrate setting; its bitrate comes from the profile.");
+            }
+
             EncoderName = "prores_aw (Apple ProRes 422 HQ)";
             Main.Log("Chart renderer using prores_aw HQ.");
             return "-c:v prores_aw -profile:v 3 -vendor apl0";
@@ -572,7 +661,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             string x264Preset = GetRealtimePreset();
             EncoderName = "libx264 " + x264Preset;
             Main.Log("Chart renderer using custom libx264 preset " + x264Preset + ".");
-            return "-c:v libx264 -preset " + Quote(x264Preset) + " " + GetX264BitrateArguments() + " -g " + GetGopSize();
+            return "-c:v libx264 -preset " + Quote(x264Preset) + " " + GetCpuBitrateArguments() + " -g " + GetGopSize();
         }
 
         private string GetNvencTune()
@@ -663,6 +752,42 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             return rank == 0 ? 8 : Math.Min(8, 11 - rank);
         }
 
+        // VVenC presets: faster (0), fast (1), medium (2), slow (3), slower (4). Auto and the fast
+        // x264 presets all use "faster" because H.266 is already extremely slow on the CPU.
+        private string GetVvcPreset()
+        {
+            int rank = GetCpuPresetRank();
+            if (rank >= 8)
+            {
+                return "slower";
+            }
+
+            if (rank == 7)
+            {
+                return "slow";
+            }
+
+            if (rank == 6)
+            {
+                return "medium";
+            }
+
+            if (rank == 5)
+            {
+                return "fast";
+            }
+
+            return "faster";
+        }
+
+        // CRF and VVC QP are different scales; this maps the UI's 0-51 CRF range to a QP range that
+        // keeps roughly the same intent (18 -> 25, 51 -> 38). H.266 is experimental, so this is
+        // deliberately conservative rather than an exact conversion.
+        private int GetVvcQp()
+        {
+            return Math.Max(0, Math.Min(63, 18 + (ClampCrf() * 2 / 5)));
+        }
+
         private int ClampCrf()
         {
             return Math.Max(0, Math.Min(51, crf));
@@ -677,11 +802,47 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         // lower CRF really gives a sharper (and larger) video. A render request can still set a bitrate.
         private bool UsesConstantQuality()
         {
-            return configuredBitrateMbps <= ChartRenderBitratePresets.AutoBitrateMbps;
+            return !UsesConstantBitrate() && configuredBitrateMbps <= ChartRenderBitratePresets.AutoBitrateMbps;
+        }
+
+        // CBR is supported by NVENC, x264/x265, SVT-AV1 and libaom. H.266/VVC and ProRes fall back:
+        // libvvenc only exposes VBR through FFmpeg, and ProRes bitrate is fixed by its profile.
+        private bool UsesConstantBitrate()
+        {
+            return constantBitrate
+                && effectiveVideoCodec != ChartRenderOptionValues.VideoCodecVvc
+                && effectiveVideoCodec != ChartRenderOptionValues.VideoCodecProRes;
+        }
+
+        private string DescribeRateControl()
+        {
+            if (effectiveVideoCodec == ChartRenderOptionValues.VideoCodecVvc)
+            {
+                return constantBitrate || configuredBitrateMbps > ChartRenderBitratePresets.AutoBitrateMbps
+                    ? "vbr " + GetTargetBitrateMbps() + "M"
+                    : "qp " + GetVvcQp();
+            }
+
+            if (UsesConstantBitrate())
+            {
+                return "cbr " + GetTargetBitrateMbps() + "M";
+            }
+
+            return UsesConstantQuality()
+                ? "crf " + ClampCrf()
+                : "vbr " + GetTargetBitrateMbps() + "M";
         }
 
         private string GetNvencBitrateArguments(bool av1 = false)
         {
+            if (UsesConstantBitrate())
+            {
+                int cbrTarget = GetTargetBitrateMbps();
+                return "-rc cbr -b:v " + cbrTarget + "M"
+                    + " -maxrate " + cbrTarget + "M"
+                    + " -bufsize " + ChartRenderBitratePresets.GetBufferSizeMbps(cbrTarget) + "M";
+            }
+
             if (UsesConstantQuality())
             {
                 // VBR with -cq still stops at the codec level's bitrate ceiling (about 120 Mbps for
@@ -700,8 +861,20 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 + " -bufsize " + buffer + "M";
         }
 
-        private string GetX264BitrateArguments()
+        private string GetCpuBitrateArguments(bool hevc = false)
         {
+            if (UsesConstantBitrate())
+            {
+                // MP4 does not support x264's HRD CBR filler, so this is a tightly VBV-constrained
+                // bitrate rather than a bit-exact constant rate. x265 gets its strict CBR flag.
+                int cbrTarget = GetTargetBitrateMbps();
+                string args = "-b:v " + cbrTarget + "M"
+                    + " -minrate " + cbrTarget + "M"
+                    + " -maxrate " + cbrTarget + "M"
+                    + " -bufsize " + ChartRenderBitratePresets.GetBufferSizeMbps(cbrTarget) + "M";
+                return hevc ? args + " -x265-params strict-cbr=1" : args;
+            }
+
             if (UsesConstantQuality())
             {
                 return "-crf " + ClampCrf();

@@ -38,7 +38,9 @@ namespace ADOFAI.EditorTweaks.Api.Rendering
         H264 = 0,
         Hevc = 1,
         Av1 = 2,
-        ProRes = 3
+        ProRes = 3,
+        // Added after API v1 shipped. Experimental H.266/VVC (CPU only, very slow, limited player support).
+        Vvc = 4
     }
 
     // Added after API v1 shipped. NVENC speed/quality preset; FollowEncoderMode keeps the preset the
@@ -214,6 +216,12 @@ namespace ADOFAI.EditorTweaks.Api.Rendering
 
         public int BitrateMbps { get; set; }
 
+        // Added after API v1 shipped. When true, the encoder targets BitrateMbps instead of encoding
+        // at a constant quality. BitrateMbps = 0 uses the recommended bitrate. This is best effort:
+        // H.264/HEVC use VBV-constrained bitrate control, H.266/VVC falls back to VBR, and ProRes
+        // ignores it (ProRes bitrate comes from its profile). Default false keeps the old behavior.
+        public bool ConstantBitrate { get; set; }
+
         public string CustomEncoderPreset { get; set; } = "veryfast";
 
         public string CustomMuxArguments { get; set; } = string.Empty;
@@ -249,6 +257,7 @@ namespace ADOFAI.EditorTweaks.Api.Rendering
                 PreviewMode = PreviewMode,
                 Quality = Quality,
                 BitrateMbps = BitrateMbps,
+                ConstantBitrate = ConstantBitrate,
                 CustomEncoderPreset = CustomEncoderPreset ?? string.Empty,
                 CustomMuxArguments = CustomMuxArguments ?? string.Empty,
                 CompletionTailSeconds = CompletionTailSeconds,

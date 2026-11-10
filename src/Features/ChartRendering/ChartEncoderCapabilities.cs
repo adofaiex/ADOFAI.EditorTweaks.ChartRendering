@@ -27,7 +27,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         // Every encoder the renderer can pick (FfmpegEncoder), in the order the settings page lists them.
         public static readonly string[] KnownEncoders =
         {
-            "h264_nvenc", "hevc_nvenc", "av1_nvenc", "libx264", "libx265", "libsvtav1", "libaom-av1", "prores_aw"
+            "h264_nvenc", "hevc_nvenc", "av1_nvenc", "libx264", "libx265", "libsvtav1", "libaom-av1", "libvvenc", "prores_aw"
         };
 
         private const int ProbeTimeoutMilliseconds = 10000;

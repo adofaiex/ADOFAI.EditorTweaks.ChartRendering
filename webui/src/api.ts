@@ -50,6 +50,7 @@ export function createMockState(): WebUiState {
     ChartRenderFps: 60,
     ChartRenderCrf: 18,
     ChartRenderBitrateMbps: 0,
+    ChartRenderConstantBitrate: false,
     ChartRenderPreset: "veryfast",
     ChartRenderEncoderMode: "auto-balanced",
     ChartRenderCaptureFormat: "rgba",
@@ -72,7 +73,7 @@ export function createMockState(): WebUiState {
   const names = ["渲染输入保护", "谱面渲染"];
   return {
     server: { connected: false, version: "演示状态" },
-    compatibility: { gameVersion: "1.3.2", editorVersion: "1.3.2", modVersion: "1.0.3" },
+    compatibility: { gameVersion: "1.3.2", editorVersion: "1.3.2", modVersion: "1.1.0" },
     patches: names.map((name, index) => ({
       id: `mock-${index}`,
       name,
@@ -87,7 +88,7 @@ export function createMockState(): WebUiState {
       status: "ready",
       detectedAt: "2026-11-10 20:00",
       gpu: "NVIDIA GeForce RTX 3070",
-      results: { h264_nvenc: true, hevc_nvenc: true, av1_nvenc: false, libx264: true, libx265: true, libsvtav1: false, "libaom-av1": true, prores_aw: true },
+      results: { h264_nvenc: true, hevc_nvenc: true, av1_nvenc: false, libx264: true, libx265: true, libsvtav1: true, "libaom-av1": true, libvvenc: true, prores_aw: true },
     },
     render: {
       active: false,

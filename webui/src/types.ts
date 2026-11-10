@@ -24,6 +24,7 @@ export interface SettingsState {
   ChartRenderFps: number;
   ChartRenderCrf: number;
   ChartRenderBitrateMbps: number;
+  ChartRenderConstantBitrate: boolean;
   ChartRenderPreset: string;
   ChartRenderEncoderMode: string;
   ChartRenderCaptureFormat: string;

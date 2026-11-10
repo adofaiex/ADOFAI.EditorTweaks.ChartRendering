@@ -302,7 +302,7 @@ AudioRenderer 捕获结果
 - `ChartRenderMemoryBudget`：根据实际输出宽高限制 GPU pending 数和编码队列容量。
 - 数组池与有界队列：复用单帧大数组，并在编码跟不上时对渲染协程施加反压。
 - Unity `AudioRenderer`：按相同固定帧时钟捕获游戏最终混音。
-- FFmpeg：接收 rawvideo、编码 H.264，并与 WAV 合成为 MP4、MKV 或 MOV。
+- FFmpeg：接收 rawvideo、按所选编码格式编码，并与 WAV 合成为 MP4、MKV 或 MOV。
 
 `IChartFrameCapture` 只暴露当前后端真实的 `Width`、`Height`、`PixelFormatName`、`RequiresVerticalFlip` 和 `RequestFrame()`。`ChartRenderSession` 必须在后端创建完成后，使用这些真实尺寸创建内存预算与 FFmpeg，而不是继续使用设置中的摄像机宽高。这样游戏画面模式退回截屏时，才能完整遵守当前窗口尺寸。
 
@@ -430,6 +430,8 @@ Patch `scrSfx.PlaySfx(... InterfaceParent ...)` 的原因：
 
 ## FFmpeg
 
+自带的是 gyan.dev 的 **9.0.2 full build**（`ffmpeg-release-full.7z`，约 228 MB），不是精简版。它提供 `libsvtav1`、`libvvenc`、`libaom-av1`、`libx264`、`libx265` 等编码器。`scripts/EnsureFfmpeg.ps1` 会用 `curl.exe` 下载、用 Windows 自带的 `tar.exe` 解压 `.7z`，并在发现旧的 essentials 版本时自动替换。
+
 `FfmpegEncoder` 的视频命令输入默认是 raw RGBA，实验模式可切到 raw BGRA：
 
 ```text
@@ -441,9 +443,11 @@ Patch `scrSfx.PlaySfx(... InterfaceParent ...)` 的原因：
 -an
 -vf <camera: vflip,pad | game-view: pad>
 <encoder args>
--pix_fmt yuv420p
-temp_video.mp4
+-pix_fmt yuv420p | yuv420p10le | yuv422p10le
+temp_video.mp4 | temp_video.mov
 ```
+
+像素格式按编码器决定：H.264/HEVC/AV1 用 `yuv420p`，H.266/VVC 用 `yuv420p10le`（libvvenc 只接受 10-bit 输入），ProRes 用 `yuv422p10le`。ProRes 的临时文件是 `.mov`，其他编码器是 `.mp4`。
 
 编码档位：
 
@@ -458,29 +462,38 @@ temp_video.mp4
 
 默认输出仍是 H.264 + yuv420p + AAC + MP4 + faststart，播放器和投稿兼容性主要来自这些封装和格式，而不是 `fast` / `veryfast` 名称本身。
 
-## 码率限制
+编码格式：
 
-视频编码会设置目标码率、最大码率和缓冲区：
+| 格式 | 编码器 | 说明 |
+| --- | --- | --- |
+| H.264 | `h264_nvenc` / `libx264` | 默认，兼容性最好。 |
+| HEVC / H.265 | `hevc_nvenc` / `libx265` | MP4/MOV 中加 `-tag:v hvc1`，苹果设备才能播放。 |
+| AV1 | `av1_nvenc`（RTX 40 系或更新）/ `libsvtav1` / `libaom-av1` | full build 自带 `libsvtav1`，没有 AV1 硬件编码时比 `libaom` 快很多。 |
+| H.266 / VVC | `libvvenc` | 实验性，不推荐。只有 CPU 编码，1080p60 约每秒数帧；输出 10-bit，MP4/MKV/MOV 都能封装，但大多数播放器、剪辑软件和网站不支持。 |
+| ProRes 422 HQ | `prores_aw` | 只输出 MOV，体积很大，适合剪辑。 |
 
-```text
--b:v <target>M
--maxrate <target * 1.5>M
--bufsize <target * 2>M
-```
+## 码率控制
 
-NVENC 使用 VBR：
-
-```text
--rc vbr -cq <quality> -b:v <target>M -maxrate <max>M -bufsize <buffer>M
-```
-
-x264 使用单次 ABR：
+`ChartRenderBitrateMbps = 0` 且关闭恒定比特率时，画质只由 CRF 控制。填写非 0 码率时使用 VBR/ABR：
 
 ```text
--b:v <target>M -maxrate <max>M -bufsize <buffer>M
+-b:v <target>M -maxrate <target * 1.5>M -bufsize <target * 2>M
 ```
 
-`ChartRenderBitrateMbps = 0` 表示自动推荐。60fps 常见推荐：
+NVENC 的 VBR 会额外带 `-rc vbr -cq <quality>`。
+
+高级设置里的“恒定比特率（CBR）”打开后，按填写的码率输出；码率为 0 时使用推荐码率，CRF 不再生效。CBR 是按编码器尽力而为，不是逐段完全恒定：
+
+| 编码器 | CBR 实现 |
+| --- | --- |
+| NVENC H.264 / HEVC / AV1 | `-rc cbr -b:v <target>M -maxrate <target>M -bufsize <buffer>M`，真正 CBR。 |
+| libx264 / libx265 | `-b:v <target>M -minrate <target>M -maxrate <target>M -bufsize <buffer>M`；x265 额外加 `strict-cbr=1`。MP4 不支持 HRD filler，属于受 VBV 限制的近似 CBR。 |
+| libsvtav1 | `-svtav1-params rc=2:pred-struct=1` 加目标码率；CBR 需要低延迟模式，压缩效率会下降。 |
+| libaom-av1 | `-b:v <target>M -minrate <target>M -maxrate <target>M -bufsize <buffer>M`。 |
+| libvvenc | FFmpeg 只暴露 VBR/ABR，没有 CBR，自动退回 VBR 并在日志里说明。 |
+| ProRes | 不适用，码率由 profile 决定，忽略 CBR。 |
+
+60fps 常见推荐码率：
 
 | 分辨率 | 推荐码率 |
 | --- | ---: |

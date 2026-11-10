@@ -24,6 +24,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering
         public int ChartRenderFps = 60;
         public int ChartRenderCrf = 18;
         public int ChartRenderBitrateMbps = ChartRenderBitratePresets.AutoBitrateMbps;
+        // Target the configured bitrate instead of constant quality. Default false keeps CRF/VBR.
+        public bool ChartRenderConstantBitrate;
         public string ChartRenderPreset = "veryfast";
         public string ChartRenderEncoderMode = ChartRenderOptionValues.EncoderAutoBalanced;
         public string ChartRenderHardwarePreset = ChartRenderOptionValues.PresetFollowEncoderMode;
@@ -117,6 +119,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             ChartRenderFps = 60;
             ChartRenderCrf = 18;
             ChartRenderBitrateMbps = ChartRenderBitratePresets.AutoBitrateMbps;
+            ChartRenderConstantBitrate = false;
             ChartRenderPreset = "veryfast";
             ChartRenderEncoderMode = ChartRenderOptionValues.EncoderAutoBalanced;
             ChartRenderHardwarePreset = ChartRenderOptionValues.PresetFollowEncoderMode;

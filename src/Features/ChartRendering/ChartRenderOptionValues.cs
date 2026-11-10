@@ -25,6 +25,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         public const string VideoCodecH264 = "h264";
         public const string VideoCodecHevc = "hevc";
         public const string VideoCodecAv1 = "av1";
+        public const string VideoCodecVvc = "vvc";
         public const string VideoCodecProRes = "prores";
 
         // "auto" = follow the encoder mode (the behavior before these presets existed).
@@ -121,6 +122,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             VideoCodecH264,
             VideoCodecHevc,
             VideoCodecAv1,
+            VideoCodecVvc,
             VideoCodecProRes
         };
 
@@ -226,6 +228,10 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     return VideoCodecHevc;
                 case VideoCodecAv1:
                     return VideoCodecAv1;
+                case VideoCodecVvc:
+                case "h266":
+                case "h.266":
+                    return VideoCodecVvc;
                 case VideoCodecProRes:
                 case "prores422":
                 case "prores_ks":
@@ -243,6 +249,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     return ChartRenderVideoCodec.Hevc;
                 case VideoCodecAv1:
                     return ChartRenderVideoCodec.Av1;
+                case VideoCodecVvc:
+                    return ChartRenderVideoCodec.Vvc;
                 case VideoCodecProRes:
                     return ChartRenderVideoCodec.ProRes;
                 default:
@@ -258,6 +266,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     return VideoCodecHevc;
                 case ChartRenderVideoCodec.Av1:
                     return VideoCodecAv1;
+                case ChartRenderVideoCodec.Vvc:
+                    return VideoCodecVvc;
                 case ChartRenderVideoCodec.ProRes:
                     return VideoCodecProRes;
                 default:
