@@ -54,6 +54,13 @@ function Write-FfmpegDistributionFiles {
 
     New-Item -ItemType Directory -Force -Path $FfmpegDirectory | Out-Null
 
+    # The notice below points at ThirdParty/FFmpeg/GPL-3.0.txt; keep a copy of the repository
+    # license there so the release package carries the GPL text next to the FFmpeg binary.
+    $repoLicense = Join-Path (Split-Path $PSScriptRoot -Parent) "LICENSE"
+    if (Test-Path -LiteralPath $repoLicense) {
+        Copy-Item -LiteralPath $repoLicense -Destination (Join-Path $FfmpegDirectory "GPL-3.0.txt") -Force
+    }
+
     if ([string]::IsNullOrWhiteSpace($VersionOutput)) {
         $VersionOutput = "ffmpeg.exe was not available when this file was generated."
     }
