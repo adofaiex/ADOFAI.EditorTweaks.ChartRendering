@@ -27,6 +27,8 @@ dotnet build ADOFAI.EditorTweaks.ChartRendering.csproj -c Release
 
 首次构建会把 `Local.props.example` 里的游戏路径填到 `Local.props`，然后下载 FFmpeg 并安装网页依赖。产物在 `out/` 和 `Build/`，部署目录为 `Mods/ADOFAI.EditorTweaks.ChartRendering/`。发行包包含 Web UI、FFmpeg 及渲染资源。
 
+本项目以 GNU GPL v3.0 许可发布，详见 LICENSE。
+
 ## 文档
 
 - `Doc/ChartRendering.md`：渲染流程和编码参数。
