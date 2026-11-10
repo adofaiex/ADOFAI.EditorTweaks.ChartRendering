@@ -816,6 +816,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         private string DescribeRateControl()
         {
+            if (effectiveVideoCodec == ChartRenderOptionValues.VideoCodecProRes)
+            {
+                return "prores";
+            }
+
             if (effectiveVideoCodec == ChartRenderOptionValues.VideoCodecVvc)
             {
                 return constantBitrate || configuredBitrateMbps > ChartRenderBitratePresets.AutoBitrateMbps
