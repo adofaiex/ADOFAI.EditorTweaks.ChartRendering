@@ -23,3 +23,18 @@ dotnet build ADOFAI.EditorTweaks.ChartRendering.csproj -c Release
 4. `main` 的 push 会触发 `.github/workflows/build.yml` 构建，但不会自动发布。确认构建通过后，到 Actions → Build Mod → Run workflow，选择 `main`、`publish_release=true`，工作流会读取 `Info.json` 的版本号并创建 GitHub Release。
 5. 检查 Release 附件：应包含 `ADOFAI.EditorTweaks.ChartRendering-<版本>.zip`、`ThirdParty/FFmpeg/ffmpeg.exe`、根目录 `LICENSE` 和 `ThirdParty/FFmpeg/GPL-3.0.txt`。
 6. 发布后发现问题：优先发一个修复版本（例如 `1.1.1`），不要复用已经发布的 tag。需要撤回时先删除或标记 Release，再按修复版本发布。
+
+## FFmpeg 对应源码
+
+发行包里的 `ffmpeg.exe` 是 gyan.dev 的 GPLv3 full build，静态链接了 libx264、libx265、libaom、libsvtav1、libvvenc、librav1e 等库。公开发布时必须同时提供对应源码，或在同一个 Release 页面放可下载的源码地址：
+
+- FFmpeg 9.0.2 源码归档：`https://github.com/FFmpeg/FFmpeg/archive/946fcce07b.zip`
+- libx264：`https://code.videolan.org/videolan/x264`
+- libx265：`https://bitbucket.org/multicoreware/x265_git`
+- libaom：`https://aomedia.googlesource.com/aom`
+- SVT-AV1：`https://gitlab.com/AOMediaCodec/SVT-AV1`
+- VVenC：`https://github.com/fraunhoferhhi/vvenc`
+- rav1e：`https://github.com/xiph/rav1e`
+- gyan.dev 构建脚本/包来源：`https://github.com/GyanD/codexffmpeg`
+
+`scripts/EnsureFfmpeg.ps1` 会把同样的信息写进 `ThirdParty/FFmpeg/FFmpeg-SOURCE.txt`。发 Release 前请确认这些源码归档或链接确实可访问。

@@ -646,7 +646,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             string x265Preset = GetX264Preset();
             EncoderName = "libx265 " + x265Preset;
             Main.Log("Chart renderer using libx265 preset " + x265Preset + ".");
-            return "-c:v libx265 -preset " + Quote(x265Preset) + " " + GetCpuBitrateArguments(hevc: true) + " -g " + GetGopSize();
+            return "-c:v libx265 -preset " + Quote(x265Preset) + " " + GetCpuBitrateArguments() + " -g " + GetGopSize();
         }
 
         // AV1 NVENC needs an RTX 40 series or newer. The bundled full FFmpeg provides libsvtav1, which
@@ -1097,18 +1097,18 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 + " -bufsize " + buffer + "M";
         }
 
-        private string GetCpuBitrateArguments(bool hevc = false)
+        private string GetCpuBitrateArguments()
         {
             if (UsesConstantBitrate())
             {
-                // MP4 does not support x264's HRD CBR filler, so this is a tightly VBV-constrained
-                // bitrate rather than a bit-exact constant rate. x265 gets its strict CBR flag.
+                // MP4 does not support HRD/filler CBR, so this is a tightly VBV-constrained bitrate
+                // rather than a bit-exact constant rate. Do not add x265 strict-cbr=1 here: it
+                // writes filler NAL units, which the MP4 muxer may reject at encode or mux time.
                 int cbrTarget = GetTargetBitrateMbps();
-                string args = "-b:v " + cbrTarget + "M"
+                return "-b:v " + cbrTarget + "M"
                     + " -minrate " + cbrTarget + "M"
                     + " -maxrate " + cbrTarget + "M"
                     + " -bufsize " + ChartRenderBitratePresets.GetBufferSizeMbps(cbrTarget) + "M";
-                return hevc ? args + " -x265-params strict-cbr=1" : args;
             }
 
             if (UsesConstantQuality())
@@ -1263,6 +1263,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
             StringBuilder stderr = new StringBuilder();
             StringBuilder stdout = new StringBuilder();
+            // The reader threads may still be finishing after Join(2000); guard the builders so a
+            // failure read cannot race an AppendLine.
+            object outputLock = new object();
             double durationSeconds = fps <= 0 ? 0.0 : writtenVideoFrames / (double)fps;
             ChartRenderDiagnostics.Log("FFmpeg mux args: " + arguments);
 
@@ -1305,12 +1308,21 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     // mux can run for minutes, and the cancel button must keep working meanwhile.
                     StreamReader errorReader = mux.StandardError;
                     StreamReader outputReader = mux.StandardOutput;
-                    Thread errorThread = StartReaderThread("FFmpegMuxStderr", errorReader, line => stderr.AppendLine(line));
+                    Thread errorThread = StartReaderThread("FFmpegMuxStderr", errorReader, line =>
+                    {
+                        lock (outputLock)
+                        {
+                            stderr.AppendLine(line);
+                        }
+                    });
                     Thread outputThread = StartReaderThread("FFmpegMuxProgress", outputReader, line =>
                     {
                         if (!TryReadMuxProgress(line, durationSeconds))
                         {
-                            stdout.AppendLine(line);
+                            lock (outputLock)
+                            {
+                                stdout.AppendLine(line);
+                            }
                         }
                     });
                     mux.WaitForExit();
@@ -1324,7 +1336,15 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     if (mux.ExitCode != 0)
                     {
                         // Read after the reader threads finished (or timed out after the process exited).
-                        string detail = BuildProcessFailureDetail(stdout.ToString(), stderr.ToString());
+                        string stdoutText;
+                        string stderrText;
+                        lock (outputLock)
+                        {
+                            stdoutText = stdout.ToString();
+                            stderrText = stderr.ToString();
+                        }
+
+                        string detail = BuildProcessFailureDetail(stdoutText, stderrText);
                         ChartRenderDiagnostics.Log("FFmpeg audio mux failed with exit code " + mux.ExitCode + "." + detail);
                         throw new InvalidOperationException("FFmpeg audio mux failed with exit code " + mux.ExitCode + "." + detail);
                     }

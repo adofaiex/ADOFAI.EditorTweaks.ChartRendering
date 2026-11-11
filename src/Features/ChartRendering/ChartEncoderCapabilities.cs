@@ -33,7 +33,10 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             "libx264", "libx265", "libsvtav1", "libaom-av1", "libvvenc", "prores_aw"
         };
 
-        private const int ProbeTimeoutMilliseconds = 10000;
+        private const int DefaultProbeTimeoutMilliseconds = 10000;
+        // libaom/libsvtav1/libvvenc can take much longer to initialise on the CPU, especially the
+        // first time a library is loaded.
+        private const int SlowCpuProbeTimeoutMilliseconds = 30000;
         // Bump when KnownEncoders changes so caches saved by an older build are probed again.
         private const int CapabilitySchemaVersion = 2;
 
@@ -136,9 +139,17 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 }
             }
 
-            bool available = Probe(ffmpegPath, encoder);
-            Record(ffmpegPath, encoder, available);
-            return available;
+            bool? available = Probe(ffmpegPath, encoder);
+            if (!available.HasValue)
+            {
+                // A timeout is not "this encoder is broken". Do not cache it or save it, so a later
+                // render (or the next launch) can probe again.
+                Main.Log("Encoder probe timed out for " + encoder + "; not saving the result.");
+                return false;
+            }
+
+            Record(ffmpegPath, encoder, available.Value);
+            return available.Value;
         }
 
         // Main thread. Writes changed results into the settings file.
@@ -200,11 +211,27 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             Dictionary<string, bool> results = new Dictionary<string, bool>(StringComparer.Ordinal);
             foreach (string encoder in KnownEncoders)
             {
-                bool available = Probe(ffmpegPath, encoder);
-                results[encoder] = available;
+                bool? available = Probe(ffmpegPath, encoder);
+                if (!available.HasValue)
+                {
+                    // Keep the previous saved result, if any, instead of turning a cold-start
+                    // timeout into a permanent "unavailable" entry.
+                    lock (Sync)
+                    {
+                        if (savedResults.TryGetValue(encoder, out bool previous))
+                        {
+                            results[encoder] = previous;
+                        }
+                    }
+
+                    Main.Log("Encoder probe timed out for " + encoder + "; keeping the previous result.");
+                    continue;
+                }
+
+                results[encoder] = available.Value;
                 lock (Sync)
                 {
-                    sessionProbes[ffmpegPath + "|" + encoder] = available;
+                    sessionProbes[ffmpegPath + "|" + encoder] = available.Value;
                 }
             }
 
@@ -253,7 +280,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
         }
 
-        private static bool Probe(string ffmpegPath, string encoder)
+        // true = available, false = unavailable, null = timed out (do not save it).
+        private static bool? Probe(string ffmpegPath, string encoder)
         {
             if (string.IsNullOrEmpty(ffmpegPath) || !File.Exists(ffmpegPath))
             {
@@ -265,7 +293,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 ProcessStartInfo info = new ProcessStartInfo
                 {
                     FileName = ffmpegPath,
-                    Arguments = "-hide_banner -loglevel quiet -y -f lavfi -i color=size=256x256:rate=1:duration=0.1 -c:v " + encoder + " -frames:v 1 -f null -",
+                    Arguments = "-hide_banner -loglevel quiet -y -f lavfi -i color=size=256x256:rate=1:duration=0.1 -c:v " + encoder
+                        + " -pix_fmt " + GetProbePixelFormat(encoder) + " -frames:v 1 -f null -",
                     UseShellExecute = false,
                     CreateNoWindow = true
                 };
@@ -277,7 +306,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                         return false;
                     }
 
-                    if (!probe.WaitForExit(ProbeTimeoutMilliseconds))
+                    if (!probe.WaitForExit(GetProbeTimeoutMilliseconds(encoder)))
                     {
                         try
                         {
@@ -287,7 +316,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                         {
                         }
 
-                        return false;
+                        return null;
                     }
 
                     return probe.ExitCode == 0;
@@ -297,6 +326,33 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             {
                 return false;
             }
+        }
+
+        private static int GetProbeTimeoutMilliseconds(string encoder)
+        {
+            return encoder == "libaom-av1" || encoder == "libsvtav1" || encoder == "libvvenc"
+                ? SlowCpuProbeTimeoutMilliseconds
+                : DefaultProbeTimeoutMilliseconds;
+        }
+
+        private static string GetProbePixelFormat(string encoder)
+        {
+            if (encoder.EndsWith("_qsv", StringComparison.Ordinal) || encoder.EndsWith("_amf", StringComparison.Ordinal))
+            {
+                return "nv12";
+            }
+
+            if (encoder == "libvvenc")
+            {
+                return "yuv420p10le";
+            }
+
+            if (encoder == "prores_aw")
+            {
+                return "yuv422p10le";
+            }
+
+            return "yuv420p";
         }
 
         // Main thread (SystemInfo). Changes when the GPU or the FFmpeg executable changes.

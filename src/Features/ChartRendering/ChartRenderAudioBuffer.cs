@@ -23,7 +23,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private const int RenderDspBufferSize = 256;
 
         private AudioConfiguration savedConfiguration;
-        private AudioClip? songBeforeReset;
+        private bool waitForSongReload;
         private bool active;
         private bool changed;
 
@@ -31,13 +31,25 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         public static int RequiredDspBufferSize => RenderDspBufferSize;
 
-        // True until the game has replaced the level song cleared by the last reset.
+        // True while an external song still has no clip or is still loading after the reset. This
+        // also covers a clip that is cleared and then reused, where comparing object references
+        // would either return too early (null) or wait forever (same reference).
         public bool IsReloadingSong
         {
             get
             {
+                if (!waitForSongReload)
+                {
+                    return false;
+                }
+
                 AudioSource? song = ADOBase.conductor?.song;
-                return songBeforeReset != null && song != null && ReferenceEquals(song.clip, songBeforeReset);
+                if (song == null || song.clip == null)
+                {
+                    return true;
+                }
+
+                return song.clip.loadState != AudioDataLoadState.Loaded;
             }
         }
 
@@ -60,8 +72,10 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
             AudioConfiguration renderConfiguration = savedConfiguration;
             renderConfiguration.dspBufferSize = RenderDspBufferSize;
-            ResetAndReloadLevelAudio(renderConfiguration);
+            // Mark the change before resetting: if ReloadSong/ReloadCustomSounds throws, Restore
+            // must still put the original DSP buffer back instead of leaving it at 256.
             changed = true;
+            ResetAndReloadLevelAudio(renderConfiguration);
             ChartRenderDiagnostics.Log("Render audio DSP buffer set temporarily. original=" + originalSize
                 + " render=" + RenderDspBufferSize + "; reloading level song and custom sounds.");
         }
@@ -94,25 +108,21 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         private void ResetAndReloadLevelAudio(AudioConfiguration configuration)
         {
-            AudioClip? previousSong = ADOBase.conductor?.song?.clip;
+            // External songs are loaded at runtime and lose their data in AudioSettings.Reset;
+            // official and bundled levels use game assets, which survive the reset and may come
+            // back as the same clip. Wait on the clip's load state instead of object identity so a
+            // cleared clip and a reused clip are both handled.
+            waitForSongReload = !ADOBase.isInternalLevel && !ADOBase.isBundleLevel;
             AudioSettings.Reset(configuration);
-            songBeforeReset = null;
             scnGame? game = scnGame.instance;
             if (game == null)
             {
+                waitForSongReload = false;
                 return;
             }
 
             game.ReloadSong(force: true);
             game.ReloadCustomSounds(force: true);
-
-            // Only an external song is loaded into a new clip. Official and bundled levels use game
-            // assets, which keep their data through a reset and come back as the same clip, so waiting
-            // for a different clip there would only run into the timeout.
-            if (!ADOBase.isInternalLevel && !ADOBase.isBundleLevel)
-            {
-                songBeforeReset = previousSong;
-            }
         }
     }
 }

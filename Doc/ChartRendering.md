@@ -499,7 +499,7 @@ NVENC 的 VBR 会额外带 `-rc vbr -cq <quality>`。
 | NVENC H.264 / HEVC / AV1 | `-rc cbr -b:v <target>M -maxrate <target>M -bufsize <buffer>M`，真正 CBR。 |
 | AMD AMF H.264 / HEVC / AV1 | `-rc cbr -b:v <target>M -maxrate <target>M -bufsize <buffer>M`。 |
 | Intel QSV H.264 / HEVC / AV1 | `-b:v <target>M -maxrate <target>M -bufsize <buffer>M -low_delay_brc 1`。 |
-| libx264 / libx265 | `-b:v <target>M -minrate <target>M -maxrate <target>M -bufsize <buffer>M`；x265 额外加 `strict-cbr=1`。MP4 不支持 HRD filler，属于受 VBV 限制的近似 CBR。 |
+| libx264 / libx265 | `-b:v <target>M -minrate <target>M -maxrate <target>M -bufsize <buffer>M`。MP4 不支持 HRD/filler，不加 `strict-cbr=1`，属于受 VBV 限制的近似 CBR。 |
 | libsvtav1 | `-svtav1-params rc=2:pred-struct=1` 加目标码率；CBR 需要低延迟模式，压缩效率会下降。 |
 | libaom-av1 | `-b:v <target>M -minrate <target>M -maxrate <target>M -bufsize <buffer>M`。 |
 | libvvenc | FFmpeg 只暴露 VBR/ABR，没有 CBR，自动退回 VBR 并在日志里说明。 |

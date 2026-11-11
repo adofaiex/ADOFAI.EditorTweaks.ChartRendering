@@ -505,9 +505,11 @@ function RenderPage({ state, offline, onSettings, onOpenDocument, onStart, onCan
   const isVvc = videoCodec === "vvc";
   const constantBitrate = state.settings.ChartRenderConstantBitrate;
   const cbrNote = constantBitrate
-    ? isProRes || isVvc
-      ? "所选编码格式不支持恒定比特率，渲染时会自动改用 VBR。"
-      : "恒定比特率会按“视频码率”输出，画质参数不再生效；H.264/HEVC 是受 VBV 限制的近似 CBR，不是逐段完全恒定。"
+    ? isProRes
+      ? "ProRes 的码率由 profile 决定，CBR 对它不生效。"
+      : isVvc
+        ? "H.266/VVC 不支持恒定比特率，渲染时会自动改用 VBR。"
+        : "恒定比特率会按“视频码率”输出，画质参数不再生效；H.264/HEVC 是受 VBV 限制的近似 CBR，不是逐段完全恒定。"
     : null;
   const shownVideoFormat = isProRes ? "mov" : state.settings.ChartRenderVideoFormat;
   const outputsMov = shownVideoFormat.toLowerCase() === "mov";
@@ -568,9 +570,11 @@ function RenderPage({ state, offline, onSettings, onOpenDocument, onStart, onCan
         ? "H.266/VVC 只有 CPU 编码，速度极慢；较慢的预设会让渲染时间长到无法接受，建议先用 10 秒片段测试。"
         : encoderDevice === "gpu"
         ? `没有可用的硬件编码器、或显卡不支持所选编码格式时，会自动改用 CPU 编码，届时使用 CPU 预设 ${shownCpuPreset}。NVIDIA 使用 p1–p7；AMD/Intel 会把相同的速度档位换算成 AMF/QSV 预设。`
-        : encoderDevice === "cpu" && slowCpuPresets.includes(shownCpuPreset.toLowerCase())
-          ? "注意：较慢的 CPU 预设会明显拖慢整个渲染，因为每一帧都要等编码器处理完。1080p60 下 slow 大约只有每秒几帧。"
-          : null;
+        : encoderDevice === "custom"
+          ? "自定义编码参数只尝试 NVENC（H.264）；AMD / Intel 显卡请使用“显卡”模式。"
+          : encoderDevice === "cpu" && slowCpuPresets.includes(shownCpuPreset.toLowerCase())
+            ? "注意：较慢的 CPU 预设会明显拖慢整个渲染，因为每一帧都要等编码器处理完。1080p60 下 slow 大约只有每秒几帧。"
+            : null;
   return <>
     <PageHeading title="谱面渲染" description="实时查看渲染阶段、编码状态和队列压力。" />
     {terminalResult ? <div className={`render-result-banner ${terminalResult.kind}`}><span className="render-result-icon">{terminalResult.kind === "success" ? <IconCheckCircle /> : terminalResult.kind === "failed" ? <IconCloseCircle /> : <IconInfoCircle />}</span><div><strong>{terminalResult.title}</strong><span>{terminalResult.detail}</span>{state.render.outputPath && terminalResult.kind === "success" ? <code title={state.render.outputPath}>{state.render.outputPath}</code> : null}</div></div> : null}

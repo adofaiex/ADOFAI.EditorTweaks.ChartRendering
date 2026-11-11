@@ -475,6 +475,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 yield return null;
             }
 
+            if (framePipeline != null && !framePipeline.WaitForPendingGpuFrames(2000))
+            {
+                WriteLog("Timed out waiting for pending GPU readbacks before releasing the capture texture.");
+            }
+
             frameCapture?.Dispose();
             frameCapture = null;
             audioCapture?.Complete();
@@ -610,6 +615,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     // Never leave the game stuck behind an active render task: give up on the worker
                     // (it is a background thread) and finish the cancel.
                     abandoned = true;
+                    // Kill once more before giving up, in case the first Abort raced the worker.
+                    encoder?.Abort();
                     WriteLog("Background worker did not stop within " + BackgroundCancelTimeoutSeconds
                         + " seconds after cancel; abandoning it.");
                     break;
@@ -691,13 +698,13 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 Directory.CreateDirectory(workspace);
                 Directory.CreateDirectory(export);
 
-                tempDirectory = Path.Combine(workspace, "CurrentRender");
-                if (Directory.Exists(tempDirectory))
-                {
-                    Directory.Delete(tempDirectory, recursive: true);
-                }
-
+                // A unique directory keeps an abandoned worker from blocking the next render; the
+                // old fixed "CurrentRender" path could still be held by FFmpeg after a timeout.
+                tempDirectory = Path.Combine(workspace, "CurrentRender_"
+                    + DateTime.Now.ToString("yyyyMMdd_HHmmss")
+                    + "_" + Guid.NewGuid().ToString("N").Substring(0, 8));
                 Directory.CreateDirectory(tempDirectory);
+                CleanupStaleRenderDirectories(workspace, tempDirectory);
                 // MP4 cannot hold ProRes, so the intermediate video uses MOV for it.
                 bool proRes = ChartRenderOptionValues.NormalizeVideoCodec(settings.ChartRenderVideoCodec) == ChartRenderOptionValues.VideoCodecProRes;
                 tempVideoPath = Path.Combine(tempDirectory, proRes ? "temp_video.mov" : "temp_video.mp4");
@@ -1001,6 +1008,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private void Cleanup(IChartFrameCapture? frameCapture, FfmpegEncoder? encoder, bool restoreEditor, bool deleteTemp)
         {
             DisableRenderAutoPlayback(resetEndFloor: true);
+            if (framePipeline != null && !framePipeline.WaitForPendingGpuFrames(2000))
+            {
+                WriteLog("Timed out waiting for pending GPU readbacks while cleaning up.");
+            }
+
             frameCapture?.Dispose();
             encoder?.Dispose();
             if (ReferenceEquals(this.frameCapture, frameCapture))
@@ -1081,6 +1093,36 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             catch (Exception ex)
             {
                 WriteLog("Failed to delete partial output " + path + ": " + ex.Message);
+            }
+        }
+
+        private static void CleanupStaleRenderDirectories(string workspace, string currentDirectory)
+        {
+            try
+            {
+                foreach (string directory in Directory.EnumerateDirectories(workspace, "CurrentRender*"))
+                {
+                    if (string.Equals(directory, currentDirectory, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        // Only remove clearly stale leftovers; an abandoned worker may still be
+                        // writing, in which case the delete fails and is ignored.
+                        if (Directory.GetLastWriteTimeUtc(directory) < DateTime.UtcNow.AddHours(-1))
+                        {
+                            Directory.Delete(directory, recursive: true);
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+            catch
+            {
             }
         }
 

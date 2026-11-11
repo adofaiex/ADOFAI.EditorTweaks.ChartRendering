@@ -99,6 +99,39 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             pendingGpuFrames = 0;
         }
 
+        // Waits for already issued AsyncGPUReadback requests before the capture texture is released.
+        // Returns false when they do not finish in time; the caller can still release the texture,
+        // but logs the timeout.
+        public bool WaitForPendingGpuFrames(int timeoutMilliseconds)
+        {
+            int elapsed = 0;
+            while (true)
+            {
+                bool waiting = false;
+                foreach (QueuedFrameOutput output in pendingFrames)
+                {
+                    if (output.PendingFrame != null && !output.PendingFrame.Done)
+                    {
+                        waiting = true;
+                        break;
+                    }
+                }
+
+                if (!waiting)
+                {
+                    return true;
+                }
+
+                if (elapsed >= timeoutMilliseconds)
+                {
+                    return false;
+                }
+
+                Thread.Sleep(1);
+                elapsed++;
+            }
+        }
+
         private void WriteCapturedFrame(ChartPendingFrame pending, FfmpegEncoder encoder, Func<bool> isCancelRequested)
         {
             byte[] buffer = RentFrameBuffer();

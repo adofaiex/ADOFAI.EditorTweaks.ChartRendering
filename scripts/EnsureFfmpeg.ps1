@@ -10,8 +10,10 @@ $ErrorActionPreference = "Stop"
 $ffmpegVersion = "9.0.2"
 $ffmpegBuildVariant = "full_build"
 $ffmpegPackageName = "ffmpeg-$ffmpegVersion-$ffmpegBuildVariant"
-$archiveName = "ffmpeg-release-full.7z"
-$url = "https://www.gyan.dev/ffmpeg/builds/$archiveName"
+$archiveName = "ffmpeg-9.0.2-full_build.7z"
+# Pin the exact GitHub release: gyan.dev's ffmpeg-release-full.7z always points at the newest
+# build, which would stop matching the SHA-256 below as soon as 9.0.3 is published.
+$url = "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/$archiveName"
 $expectedSha256 = "f0e46253c70dfe902bac915dfb4224f0cf1b7c6eeab9da2ccc9a5581f9a71b13"
 $sourceCommit = "946fcce07b"
 $sourceUrl = "https://github.com/FFmpeg/FFmpeg/tree/$sourceCommit"
@@ -124,6 +126,16 @@ Important:
   and librav1e. A compliant source offer should cover FFmpeg and the linked
   GPL/LGPL libraries that form the distributed binary, plus the build
   scripts/configuration needed to rebuild it.
+
+External library source projects:
+  libx264:   https://code.videolan.org/videolan/x264
+  libx265:   https://bitbucket.org/multicoreware/x265_git
+  libaom:    https://aomedia.googlesource.com/aom
+  libsvtav1: https://gitlab.com/AOMediaCodec/SVT-AV1
+  libvvenc:  https://github.com/fraunhoferhhi/vvenc
+  librav1e:  https://github.com/xiph/rav1e
+  Build scripts / package sources:
+             https://github.com/GyanD/codexffmpeg
 
 Recommended release practice:
   1. Keep this file, FFmpeg-BUILD.txt, FFmpeg-NOTICE.txt, and the GPLv3 text

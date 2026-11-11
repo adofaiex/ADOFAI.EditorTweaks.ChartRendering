@@ -55,8 +55,9 @@
 - H.266/VVC 只有 CPU 编码，1080p60 大约每秒数帧，播放器和剪辑软件支持有限；设置页标为实验性、不推荐、仅供尝鲜。它不支持 CBR，开启 CBR 时会自动退回 VBR。
 - ProRes 的码率由 profile 决定，CBR 对它不生效；ProRes 只能保存为 MOV，音频不能用 FLAC。
 - H.264/HEVC 在 MP4 中的 CBR 是受 VBV 限制的近似恒定码率，不是逐段完全不变。
+- 默认成片与 1.0.3 不同：1.0.3 在码率为自动时使用带 1.5× 上限的 VBR；1.1.0 改为 CRF / constqp。需要固定码率时请设置视频码率或打开 CBR。
 - AV1 硬件编码需要 NVIDIA RTX 40 系、AMD RDNA 3 或 Intel Arc 及更新的显卡；更老的显卡会回退 CPU 的 `libsvtav1`。
-- AMD AMF / Intel QSV 的可用性取决于显卡、驱动和 FFmpeg 构建；编码器检测失败或编码器启动失败时会回退 CPU。
+- AMD AMF / Intel QSV 的可用性取决于显卡、驱动和 FFmpeg 构建；编码器检测阶段不可用时会回退 CPU。如果探测通过但编码器实际启动失败，渲染会报错并记录 FFmpeg stderr。
 - 音频缓冲大于 256 时，渲染会临时切换 DSP 缓冲并重新加载歌曲；其他 mod 自己加载的音效（例如 Creplay 的按键音）可能需要重进谱面才能恢复。
 - full build 的 `ffmpeg.exe` 约 228 MB，安装包会明显变大（Release zip 约 85 MB）。
 

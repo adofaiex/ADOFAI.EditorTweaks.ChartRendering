@@ -90,7 +90,16 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
 
             string expanded = Environment.ExpandEnvironmentVariables(path.Trim());
-            return Path.GetFullPath(expanded);
+            try
+            {
+                return Path.GetFullPath(expanded);
+            }
+            catch
+            {
+                // Invalid characters must behave like an empty custom path, not crash the render
+                // before the bundled FFmpeg fallback is tried.
+                return string.Empty;
+            }
         }
     }
 }
