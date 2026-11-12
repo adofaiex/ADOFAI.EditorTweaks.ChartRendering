@@ -1,12 +1,12 @@
 {
   "Id": "ADOFAI.EditorTweaks.ChartRendering",
   "DisplayName": "ADOFAI Editor Tweaks - Chart Rendering",
-  "Author": "memsyslizi",
+  "Author": "memsyslizi, 离殇i",
   "Version": "1.1.0",
   "ManagerVersion": "0.27.0",
   "Requirements": [],
   "AssemblyName": "ADOFAI.EditorTweaks.ChartRendering.dll",
   "EntryMethod": "ADOFAI.EditorTweaks.ChartRendering.Main.Load",
-  "HomePage": "",
+  "HomePage": "https://github.com/adofaiex/ADOFAI.EditorTweaks.ChartRendering",
   "Repository": ""
 }
