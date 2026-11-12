@@ -99,37 +99,33 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             pendingGpuFrames = 0;
         }
 
-        // Waits for already issued AsyncGPUReadback requests before the capture texture is released.
-        // Returns false when they do not finish in time; the caller can still release the texture,
-        // but logs the timeout.
+        // Finishes already issued AsyncGPUReadback requests before the capture texture is released.
+        // Runs on the main thread, where request.done does not advance without a new Unity frame, so
+        // this uses WaitForCompletion instead of polling. Returns false when it took longer than
+        // timeoutMilliseconds (only used for logging) or a request could not be completed.
         public bool WaitForPendingGpuFrames(int timeoutMilliseconds)
         {
-            int elapsed = 0;
-            while (true)
+            System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+            bool ok = true;
+            foreach (QueuedFrameOutput output in pendingFrames)
             {
-                bool waiting = false;
-                foreach (QueuedFrameOutput output in pendingFrames)
+                if (output.PendingFrame == null || output.PendingFrame.Done)
                 {
-                    if (output.PendingFrame != null && !output.PendingFrame.Done)
-                    {
-                        waiting = true;
-                        break;
-                    }
+                    continue;
                 }
 
-                if (!waiting)
+                try
                 {
-                    return true;
+                    output.PendingFrame.WaitForCompletion();
                 }
-
-                if (elapsed >= timeoutMilliseconds)
+                catch (Exception exception)
                 {
-                    return false;
+                    ok = false;
+                    ChartRenderDiagnostics.Log("WaitForCompletion failed for frame " + output.PendingFrame.Index + ": " + exception.Message);
                 }
-
-                Thread.Sleep(1);
-                elapsed++;
             }
+
+            return ok && watch.ElapsedMilliseconds <= timeoutMilliseconds;
         }
 
         private void WriteCapturedFrame(ChartPendingFrame pending, FfmpegEncoder encoder, Func<bool> isCancelRequested)

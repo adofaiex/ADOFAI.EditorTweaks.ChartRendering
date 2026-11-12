@@ -477,7 +477,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
             if (framePipeline != null && !framePipeline.WaitForPendingGpuFrames(2000))
             {
-                WriteLog("Timed out waiting for pending GPU readbacks before releasing the capture texture.");
+                WriteLog("Pending GPU readbacks were slow or failed before releasing the capture texture.");
             }
 
             frameCapture?.Dispose();
@@ -1010,7 +1010,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             DisableRenderAutoPlayback(resetEndFloor: true);
             if (framePipeline != null && !framePipeline.WaitForPendingGpuFrames(2000))
             {
-                WriteLog("Timed out waiting for pending GPU readbacks while cleaning up.");
+                WriteLog("Pending GPU readbacks were slow or failed while cleaning up.");
             }
 
             frameCapture?.Dispose();

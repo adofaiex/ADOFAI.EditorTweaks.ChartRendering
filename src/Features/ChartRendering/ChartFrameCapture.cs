@@ -256,6 +256,16 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         public bool Done => request.done;
 
+        // Blocks until the GPU has finished this readback. request.done only advances when Unity
+        // ticks a frame, so polling it in a loop on the main thread never completes.
+        public void WaitForCompletion()
+        {
+            if (!request.done)
+            {
+                request.WaitForCompletion();
+            }
+        }
+
         public void Complete(byte[] destination)
         {
             if (request.hasError)
