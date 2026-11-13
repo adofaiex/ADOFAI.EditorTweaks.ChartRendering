@@ -1,6 +1,9 @@
 # ChartRendering 设置
 
-UMM 面板只录入 Web UI 快捷键，默认 `Ctrl+Shift+E`。渲染设置在 Web UI 中保存：
+UMM 面板只录入 Web UI 快捷键，默认 `F8`（也可以用 F9、Ctrl+Shift+U 等）。渲染设置在 Web UI 中保存：
+
+- `WebUiOpenMode`：打开设置页的方式（自动优先 Steam 覆盖层 / Steam 覆盖层 / 系统浏览器）。
+- `WebUiAllowLan`：是否允许局域网访问（默认关闭；开启后显示带令牌的局域网地址）。
 
 - 工作区、导出目录、宽高、帧率、CRF、码率和恒定比特率（CBR）。
 - 摄像机/游戏画面来源、回读格式、预览模式。

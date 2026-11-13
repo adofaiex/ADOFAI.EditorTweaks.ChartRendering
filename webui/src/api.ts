@@ -42,7 +42,9 @@ export function createEventSource(onState: (state: WebUiState) => void): EventSo
 
 export function createMockState(): WebUiState {
   const settings: SettingsState = {
-    WebUiOpenHotkey: "Ctrl+Shift+E",
+    WebUiOpenHotkey: "F8",
+    WebUiOpenMode: "auto",
+    WebUiAllowLan: false,
     ChartRenderWorkspaceDirectory: "D:/ADOFAI/Workspace",
     ChartRenderExportDirectory: "D:/ADOFAI/Exports",
     ChartRenderWidth: 1920,
@@ -73,7 +75,7 @@ export function createMockState(): WebUiState {
 
   const names = ["渲染输入保护", "谱面渲染"];
   return {
-    server: { connected: false, version: "演示状态" },
+    server: { connected: false, version: "演示状态", lanEnabled: false, lanUrl: "", lanUrls: [] },
     compatibility: { gameVersion: "1.3.2", editorVersion: "1.3.2", modVersion: "1.1.0" },
     patches: names.map((name, index) => ({
       id: `mock-${index}`,

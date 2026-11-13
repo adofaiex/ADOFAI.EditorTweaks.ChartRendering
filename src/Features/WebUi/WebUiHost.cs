@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -37,6 +38,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
         private string webRoot = string.Empty;
         private string accessToken = string.Empty;
         private string pageUrl = string.Empty;
+        private int localPort;
+        private WebUiLanProxy? lanProxy;
+        private string lanUrl = string.Empty;
+        private readonly List<string> lanUrls = new List<string>();
+        private bool lanStartAttempted;
         private string latestStateJson = "{}";
         private ChartRenderTask? renderTask;
         private int lastEncoderChangeCount = -1;
@@ -46,6 +52,13 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
         private int shutdownRequested;
 
         public static bool IsRunning => instance != null && instance.listener != null;
+
+        public static bool LanEnabled => instance != null && instance.lanProxy != null;
+
+        public static string LanUrl => instance?.lanUrl ?? string.Empty;
+
+        public static IReadOnlyList<string> LanUrls =>
+            instance != null ? (IReadOnlyList<string>)instance.lanUrls : Array.Empty<string>();
 
         public static void Ensure()
         {
@@ -80,6 +93,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
         {
             ProcessCommands();
             ObserveRenderTask();
+            UpdateLanProxy();
 
             if (WebUiHotkey.IsPressed(Main.Settings.WebUiOpenHotkey))
             {
@@ -91,8 +105,15 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
 
             if (ChartRenderService.IsActive && Input.GetKeyDown(KeyCode.Escape))
             {
-                ChartRenderApi.CurrentTask?.Cancel();
-                Main.Log("[WebUI] Render canceled by Escape.");
+                if (ChartRenderService.IsWritingOutput)
+                {
+                    Main.Log("[WebUI] Ignored Escape while the output file is being written. Use the web page cancel button if needed.");
+                }
+                else
+                {
+                    ChartRenderApi.CurrentTask?.Cancel();
+                    Main.Log("[WebUI] Render canceled by Escape.");
+                }
             }
 
             // Encoder detection runs on a background thread; its results are saved and shown from here.
@@ -145,6 +166,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 Name = "ADOFAI.EditorTweaks.ChartRendering.WebUiHttp"
             };
             listenerThread.Start();
+            UpdateLanProxy();
             Main.Log("[WebUI] Listening on 127.0.0.1. Open " + pageUrl);
             stateDirty = false;
         }
@@ -159,6 +181,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                     candidate.Prefixes.Add("http://127.0.0.1:" + port + "/");
                     candidate.Start();
                     listener = candidate;
+                    localPort = port;
                     pageUrl = "http://127.0.0.1:" + port + "/?token=" + accessToken;
                     return true;
                 }
@@ -169,6 +192,140 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             }
 
             return false;
+        }
+
+        private void UpdateLanProxy()
+        {
+            bool wanted = Main.Settings != null && Main.Settings.WebUiAllowLan && listener != null;
+            if (!wanted)
+            {
+                StopLanProxy();
+                return;
+            }
+
+            if (lanProxy != null)
+            {
+                return;
+            }
+
+            if (lanStartAttempted)
+            {
+                return;
+            }
+
+            lanStartAttempted = true;
+            WebUiLanProxy? proxy = WebUiLanProxy.TryStart(localPort, out int lanPort, out string error);
+            if (proxy == null)
+            {
+                Main.Log("[WebUI] LAN access could not start: " + error);
+                return;
+            }
+
+            lanProxy = proxy;
+            lanUrls.Clear();
+            foreach (string address in GetLanAddresses())
+            {
+                lanUrls.Add("http://" + address + ":" + lanPort + "/?token=" + accessToken);
+            }
+
+            lanUrl = lanUrls.Count > 0 ? lanUrls[0] : string.Empty;
+            Main.Log("[WebUI] LAN access enabled on port " + lanPort + ".");
+            foreach (string url in lanUrls)
+            {
+                Main.Log("[WebUI] LAN address: " + url);
+            }
+
+            if (lanUrls.Count == 0)
+            {
+                Main.Log("[WebUI] No LAN IPv4 address was found; use this machine's LAN IP with port "
+                    + lanPort + ".");
+            }
+
+            stateDirty = true;
+        }
+
+        private void StopLanProxy()
+        {
+            lanStartAttempted = false;
+            if (lanProxy == null)
+            {
+                return;
+            }
+
+            lanProxy.Stop();
+            lanProxy = null;
+            lanUrl = string.Empty;
+            lanUrls.Clear();
+            Main.Log("[WebUI] LAN access disabled.");
+            stateDirty = true;
+        }
+
+        private static List<string> GetLanAddresses()
+        {
+            List<string> candidates = new List<string>();
+            try
+            {
+                foreach (NetworkInterface networkInterface in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (networkInterface.OperationalStatus != OperationalStatus.Up
+                        || networkInterface.NetworkInterfaceType == NetworkInterfaceType.Loopback
+                        || networkInterface.NetworkInterfaceType == NetworkInterfaceType.Tunnel
+                        || networkInterface.NetworkInterfaceType == NetworkInterfaceType.Ppp)
+                    {
+                        continue;
+                    }
+
+                    foreach (UnicastIPAddressInformation address in networkInterface.GetIPProperties().UnicastAddresses)
+                    {
+                        if (address.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+                        {
+                            continue;
+                        }
+
+                        string text = address.Address.ToString();
+                        if (text.StartsWith("169.254.", StringComparison.Ordinal))
+                        {
+                            continue;
+                        }
+
+                        if (!candidates.Contains(text))
+                        {
+                            candidates.Add(text);
+                        }
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            // Prefer a normal home/office LAN address over VPN and virtual adapters.
+            candidates.Sort((a, b) => LanAddressRank(a).CompareTo(LanAddressRank(b)));
+            return candidates;
+        }
+
+        private static int LanAddressRank(string address)
+        {
+            if (address.StartsWith("192.168.", StringComparison.Ordinal))
+            {
+                return 0;
+            }
+
+            if (address.StartsWith("10.", StringComparison.Ordinal))
+            {
+                return 1;
+            }
+
+            if (address.StartsWith("172.", StringComparison.Ordinal))
+            {
+                string[] parts = address.Split('.');
+                if (parts.Length >= 2 && int.TryParse(parts[1], out int second) && second >= 16 && second <= 31)
+                {
+                    return 2;
+                }
+            }
+
+            return 3;
         }
 
         private void ListenLoop()
@@ -613,6 +770,12 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                     case "WebUiOpenHotkey":
                         settings.WebUiOpenHotkey = GetString(change.Value, settings.WebUiOpenHotkey);
                         break;
+                    case "WebUiOpenMode":
+                        settings.WebUiOpenMode = WebUiOpenTargets.Normalize(GetString(change.Value, settings.WebUiOpenMode));
+                        break;
+                    case "WebUiAllowLan":
+                        settings.WebUiAllowLan = GetBool(change.Value, settings.WebUiAllowLan);
+                        break;
                     case "ChartRenderWorkspaceDirectory": settings.ChartRenderWorkspaceDirectory = GetString(change.Value, settings.ChartRenderWorkspaceDirectory); break;
                     case "ChartRenderExportDirectory": settings.ChartRenderExportDirectory = GetString(change.Value, settings.ChartRenderExportDirectory); break;
                     case "ChartRenderWidth": settings.ChartRenderWidth = GetInt(change.Value, settings.ChartRenderWidth); break;
@@ -652,6 +815,13 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 if (string.IsNullOrWhiteSpace(pageUrl))
                 {
                     Main.Log("[WebUI] The local service is not running; cannot open the settings page.");
+                    yield break;
+                }
+
+                string openMode = WebUiOpenTargets.Normalize(Main.Settings.WebUiOpenMode);
+                if (openMode == WebUiOpenTargets.Browser)
+                {
+                    OpenDefaultBrowser("Configured to use the system browser");
                     yield break;
                 }
 
@@ -745,6 +915,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             {
                 return;
             }
+
+            StopLanProxy();
 
             if (openSettingsPageRoutine != null)
             {

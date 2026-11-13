@@ -22,7 +22,6 @@ import {
   IconDown,
 } from "@arco-design/web-react/icon";
 import React from "react";
-import { createPortal } from "react-dom";
 import { createEventSource, createMockState, isLocalPreview, localDocumentUrl, postJson } from "./api";
 import type { EncoderState, PageKey, PatchStatus, RenderState, SettingsState, WebUiState } from "./types";
 
@@ -45,6 +44,11 @@ const statusLabel: Record<string, string> = {
 };
 
 const settingLabels: Record<string, Record<string, string>> = {
+  WebUiOpenMode: {
+    auto: "自动（优先 Steam 覆盖层）",
+    steam: "Steam 覆盖层",
+    browser: "系统浏览器",
+  },
   ChartRenderEncoderMode: {
     "auto-balanced": "自动均衡",
     fastest: "最快",
@@ -650,6 +654,16 @@ function RenderPage({ state, offline, onSettings, onOpenDocument, onStart, onCan
         {professionalOpen ? <div className="professional-settings"><div className="settings-note">自定义 FFmpeg 程序路径：填写 ffmpeg.exe 的完整路径，留空则使用 Mod 自带的 FFmpeg。路径无效时会自动回退到自带版本。</div><SettingText label="自定义 FFmpeg 路径" value={state.settings.FfmpegCustomPath} onChange={(value) => onSettings({ FfmpegCustomPath: value })} disabled={settingsLocked} /><div className="settings-note">输入完整的自定义 FFmpeg 合成参数字符串。留空则使用自动生成参数。</div><SettingText label="自定义 FFmpeg 合成参数" value={state.settings.ChartRenderCustomMuxArgs} onChange={(value) => onSettings({ ChartRenderCustomMuxArgs: value })} disabled={settingsLocked} /><Button className="secondary-button" onClick={() => onOpenDocument("/docs/ffmpeg")}>打开 FFmpeg 参数参考帮助</Button></div> : null}
       </div> : null}
     </section>
+    <section className="render-settings angular-panel">
+      <SectionHeading title="Web 设置页" hint="快捷键、打开方式和局域网访问" />
+      <div className="settings-grid">
+        <SettingText label="打开设置页快捷键" value={state.settings.WebUiOpenHotkey} onChange={(value) => onSettings({ WebUiOpenHotkey: value })} disabled={false} />
+        <SettingSelect label="打开方式" group="WebUiOpenMode" value={state.settings.WebUiOpenMode} options={["auto", "steam", "browser"]} onChange={(value) => onSettings({ WebUiOpenMode: value })} disabled={false} />
+        <SettingSwitch label="允许局域网访问" description="同一局域网的手机/平板可以打开设置页查看渲染进度。地址包含控制令牌，请勿公开。" value={state.settings.WebUiAllowLan} onChange={(value) => onSettings({ WebUiAllowLan: value })} disabled={false} />
+        {state.settings.WebUiAllowLan ? <InfoBlock text={state.server.lanUrls.length > 0 ? `局域网地址：${state.server.lanUrls.join("    ")}` : (state.server.lanUrl ? `局域网地址：${state.server.lanUrl}` : "正在启动局域网服务。如果手机无法访问，请在 Windows 防火墙中允许游戏和对应端口。")} /> : null}
+        <InfoBlock text="需要在外网查看时，建议用 Tailscale / ZeroTier 等组网工具，不要把端口直接暴露到公网。" />
+      </div>
+    </section>
   </>;
 }
 
@@ -767,43 +781,46 @@ function SettingSelect({ label, group, value, options, onChange, disabled, disab
 // disabledOptions maps an option that cannot be chosen right now to the reason, shown on hover.
 function CustomSelect({ group, value, options, onChange, disabled, disabledOptions }: { group?: string; value: string; options: string[]; onChange: (value: string) => void; disabled?: boolean; disabledOptions?: Record<string, string> }) {
   const [open, setOpen] = React.useState(false);
-  const [menuStyle, setMenuStyle] = React.useState<React.CSSProperties>({});
+  const [openUp, setOpenUp] = React.useState(false);
   const controlRef = React.useRef<HTMLButtonElement>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     if (!open) return;
-    const updatePosition = () => {
-      const rect = controlRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      setMenuStyle({ left: rect.left, top: rect.bottom + 6, width: rect.width });
-    };
     const closeOnOutsideClick = (event: MouseEvent) => {
       const target = event.target as Node;
       if (controlRef.current && !controlRef.current.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
     };
-    updatePosition();
     document.addEventListener("mousedown", closeOnOutsideClick);
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      document.removeEventListener("mousedown", closeOnOutsideClick);
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
+    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
   }, [open]);
 
-  const menu = open ? createPortal(
-    <div ref={menuRef} className="select-menu" role="listbox" style={menuStyle}>
+  const toggle = () => {
+    if (!open) {
+      const rect = controlRef.current?.getBoundingClientRect();
+      const estimatedHeight = options.length * 40 + 12;
+      // Open upward when the menu would run into the status bar. Keeping the menu inside the
+      // field also avoids the Steam overlay misplacing position:fixed portals.
+      setOpenUp(Boolean(rect && rect.bottom + estimatedHeight > window.innerHeight - 72));
+    }
+    setOpen((current) => !current);
+  };
+
+  const menu = open ? (
+    <div
+      ref={menuRef}
+      className="select-menu"
+      role="listbox"
+      style={openUp ? { top: "auto", bottom: "calc(100% + 6px)" } : undefined}
+    >
       {options.map((option) => {
         const disabledReason = disabledOptions?.[option];
         return <button className={`select-option ${option === value ? "is-selected" : ""}`} key={option} type="button" role="option" aria-selected={option === value} aria-disabled={disabledReason ? true : undefined} disabled={Boolean(disabledReason)} title={disabledReason} onClick={() => { onChange(option); setOpen(false); }}><span className="select-option-check">{option === value ? <IconCheck /> : null}</span><span>{labelFor(group ?? "", option)}</span></button>;
       })}
-    </div>,
-    document.body,
+    </div>
   ) : null;
 
-  return <div className="select-field"><button ref={controlRef} className={`select-control ${open ? "is-open" : ""}`} type="button" disabled={disabled} aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((current) => !current)}><span className="select-value">{labelFor(group ?? "", value)}</span><IconDown className="select-chevron" /></button>{menu}</div>;
+  return <div className="select-field"><button ref={controlRef} className={`select-control ${open ? "is-open" : ""}`} type="button" disabled={disabled} aria-haspopup="listbox" aria-expanded={open} onClick={toggle}><span className="select-value">{labelFor(group ?? "", value)}</span><IconDown className="select-chevron" /></button>{menu}</div>;
 }
 
 function InfoBlock({ text }: { text: string }) { return <div className="info-block"><IconInfoCircle /><span>{text}</span></div>; }

@@ -48,7 +48,10 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 ["server"] = new Dictionary<string, object>
                 {
                     ["connected"] = true,
-                    ["version"] = Main.Mod?.Info?.Version ?? "0.0.0"
+                    ["version"] = Main.Mod?.Info?.Version ?? "0.0.0",
+                    ["lanEnabled"] = WebUiHost.LanEnabled,
+                    ["lanUrl"] = WebUiHost.LanUrl,
+                    ["lanUrls"] = new List<string>(WebUiHost.LanUrls)
                 },
                 ["compatibility"] = new Dictionary<string, object>
                 {
@@ -74,6 +77,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             return new Dictionary<string, object>
             {
                 ["WebUiOpenHotkey"] = settings.WebUiOpenHotkey,
+                ["WebUiOpenMode"] = settings.WebUiOpenMode ?? string.Empty,
+                ["WebUiAllowLan"] = settings.WebUiAllowLan,
                 ["ChartRenderWorkspaceDirectory"] = settings.ChartRenderWorkspaceDirectory ?? string.Empty,
                 ["ChartRenderExportDirectory"] = settings.ChartRenderExportDirectory ?? string.Empty,
                 ["ChartRenderWidth"] = settings.ChartRenderWidth,

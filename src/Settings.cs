@@ -15,6 +15,10 @@ namespace ADOFAI.EditorTweaks.ChartRendering
         private const int MaxFps = 240;
 
         public string WebUiOpenHotkey = WebUiHotkey.Default;
+        // How the hotkey opens the settings page: auto (Steam overlay, then browser), steam, browser.
+        public string WebUiOpenMode = WebUiOpenTargets.Auto;
+        // Opt-in LAN access. The loopback server stays local; a TCP proxy forwards LAN connections.
+        public bool WebUiAllowLan;
         // Optional ffmpeg.exe to use instead of the bundled one. Empty = bundled.
         public string FfmpegCustomPath = string.Empty;
         public string ChartRenderWorkspaceDirectory = string.Empty;
@@ -79,6 +83,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering
         public void Normalize()
         {
             WebUiOpenHotkey = WebUiHotkey.NormalizeOrDefault(WebUiOpenHotkey);
+            WebUiOpenMode = WebUiOpenTargets.Normalize(WebUiOpenMode);
             ChartRenderWidth = MakeEven(Mathf.Clamp(ChartRenderWidth, MinSize, MaxWidth));
             ChartRenderHeight = MakeEven(Mathf.Clamp(ChartRenderHeight, MinSize, MaxHeight));
             ChartRenderFps = Mathf.Clamp(ChartRenderFps, 1, MaxFps);
@@ -113,6 +118,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering
         public void ResetAllDefaults(UnityModManager.ModEntry modEntry)
         {
             WebUiOpenHotkey = WebUiHotkey.Default;
+            WebUiOpenMode = WebUiOpenTargets.Auto;
+            WebUiAllowLan = false;
             FfmpegCustomPath = string.Empty;
             ChartRenderWorkspaceDirectory = Path.Combine(modEntry.Path, "Workspace");
             ChartRenderExportDirectory = Path.Combine(

@@ -290,10 +290,13 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
             try
             {
+                // AMF enforces minimum widths: HEVC needs at least 384 and AV1 at least 320.
+                // Probing at 256x256 made hevc_amf/av1_amf fail at Init() even though real
+                // renders work, so use a normal 640x360 frame for every encoder.
                 ProcessStartInfo info = new ProcessStartInfo
                 {
                     FileName = ffmpegPath,
-                    Arguments = "-hide_banner -loglevel quiet -y -f lavfi -i color=size=256x256:rate=1:duration=0.1 -c:v " + encoder
+                    Arguments = "-hide_banner -loglevel quiet -y -f lavfi -i color=size=640x360:rate=1:duration=0.1 -c:v " + encoder
                         + " -pix_fmt " + GetProbePixelFormat(encoder) + " -frames:v 1 -f null -",
                     UseShellExecute = false,
                     CreateNoWindow = true

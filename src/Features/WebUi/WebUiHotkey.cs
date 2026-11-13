@@ -7,7 +7,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
 {
     internal static class WebUiHotkey
     {
-        public const string Default = "Ctrl+Shift+E";
+        public const string Default = "F8";
 
         private static readonly Dictionary<string, KeyCode> aliases = new Dictionary<string, KeyCode>(StringComparer.OrdinalIgnoreCase)
         {

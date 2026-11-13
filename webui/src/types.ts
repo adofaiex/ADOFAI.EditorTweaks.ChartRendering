@@ -17,6 +17,8 @@ export interface PatchStatus {
 
 export interface SettingsState {
   WebUiOpenHotkey: string;
+  WebUiOpenMode: string;
+  WebUiAllowLan: boolean;
   ChartRenderWorkspaceDirectory: string;
   ChartRenderExportDirectory: string;
   ChartRenderWidth: number;
@@ -77,6 +79,9 @@ export interface WebUiState {
   server: {
     connected: boolean;
     version: string;
+    lanEnabled: boolean;
+    lanUrl: string;
+    lanUrls: string[];
   };
   compatibility: {
     gameVersion: string;

@@ -496,7 +496,6 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             audioCapture?.Dispose();
             audioBuffer.Restore();
             ChartRenderVisualClock.End();
-            RestoreState();
 
             if (IsCancellationRequested)
             {
