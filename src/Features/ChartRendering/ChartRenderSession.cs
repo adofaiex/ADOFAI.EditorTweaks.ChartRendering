@@ -14,6 +14,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
     internal sealed class ChartRenderSession
     {
         private const double CompletionFallbackSeconds = 30.0;
+        private const float BackgroundCancelTimeoutSeconds = 10f;
 
         private readonly UnityModManager.ModEntry modEntry;
         private readonly ChartRenderConfiguration configuration;
@@ -59,7 +60,43 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         public static int AutoPlaybackEndFloor { get; private set; } = int.MaxValue;
 
-        public float Progress => progress.Progress;
+        // Capturing frames fills the bar to 90%; finishing the video and muxing the audio take the rest,
+        // so the bar no longer sits at 100% while the output file is still being written.
+        private const float CaptureProgressShare = 0.90f;
+        private const float FinishVideoProgressShare = 0.02f;
+        private OutputStage outputStage;
+
+        private enum OutputStage
+        {
+            Capturing,
+            FinishingVideo,
+            Muxing,
+            Done
+        }
+
+        public float Progress
+        {
+            get
+            {
+                switch (outputStage)
+                {
+                    case OutputStage.FinishingVideo:
+                        return CaptureProgressShare;
+                    case OutputStage.Muxing:
+                        float mux = encoder == null ? 0f : encoder.MuxProgress;
+                        return CaptureProgressShare + FinishVideoProgressShare
+                            + (1f - CaptureProgressShare - FinishVideoProgressShare) * Mathf.Clamp01(mux);
+                    case OutputStage.Done:
+                        return 1f;
+                    default:
+                        return progress.Progress * CaptureProgressShare;
+                }
+            }
+        }
+
+        // True from the end of frame capture until the output file is complete: closing the game now
+        // loses the video even though every frame has been rendered.
+        public bool IsWritingOutput => outputStage == OutputStage.FinishingVideo || outputStage == OutputStage.Muxing;
 
         public string StageText { get; private set; } = Settings.Text("chartRendererRendering");
 
@@ -136,6 +173,33 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
 
             yield return null;
+
+            // A DSP buffer switch reloads the level song asynchronously; playback must not start on the
+            // cleared clip.
+            int songReloadWait = 0;
+            while (audioBuffer.IsReloadingSong && !IsCancellationRequested && songReloadWait < settings.ChartRenderFps * 15)
+            {
+                songReloadWait++;
+                DetailText = "Reloading level audio...";
+                yield return null;
+            }
+
+            if (audioBuffer.IsReloadingSong && !IsCancellationRequested)
+            {
+                result.Success = false;
+                result.ErrorCode = ChartRenderErrorCode.InitializationFailed;
+                result.Message = "Timed out while reloading the level song after switching the audio buffer.";
+                Cleanup(frameCapture, encoder, restoreEditor: true, deleteTemp: true);
+                Finish(onComplete, result);
+                yield break;
+            }
+
+            if (songReloadWait > 0)
+            {
+                WriteLog("Level song reloaded after audio buffer switch (" + songReloadWait + " frames).");
+            }
+
+            LogSongState("Before playback");
 
             apiTask.SetState(ChartRenderTaskState.WaitingForPlayback);
             if (!TryStartPlayback(out failure))
@@ -272,7 +336,12 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     budget.MaxEncoderQueueFrames,
                     settings.ChartRenderAudioSyncOffsetMs,
                     settings.ChartRenderAudioFormat,
-                    settings.ChartRenderCustomMuxArgs);
+                    settings.ChartRenderCustomMuxArgs,
+                    settings.ChartRenderVideoCodec,
+                    settings.ChartRenderHardwarePreset,
+                    settings.ChartRenderCpuPreset,
+                    settings.ChartRenderConstantBitrate,
+                    settings.ChartRenderHardwareEncoder);
                 encoder.BeginVideo();
                 EncoderName = encoder.EncoderName;
                 BeginForcedVisualClock();
@@ -315,6 +384,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             int renderFrameLimit = progress.TotalFrames + fallbackExtraFrames;
             bool estimateExpandedToFallback = false;
             WriteLog("Render estimate: " + progress.TotalFrames + " frames, fallback limit: " + renderFrameLimit + " frames. " + MemoryBudgetText + "; " + QueueBudgetText);
+            ChartRenderDiagnostics.LogMemory("Start of render");
             DetailText = Path.GetFileName(outputPath);
             yield return null;
 
@@ -346,6 +416,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     }
 
                     requestedFrames++;
+                    if (requestedFrames == fps * 5 || requestedFrames == fps * 30)
+                    {
+                        LogSongState("Render frame " + requestedFrames);
+                    }
+
                     SetForcedFrameTimeFromAudioCursor(requestedFrames);
                     ChartRenderDiagnostics.LogFrame(requestedFrames, renderFrameLimit);
                     DrainReadyFrames(framePipeline!, encoder!);
@@ -400,6 +475,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 yield return null;
             }
 
+            if (framePipeline != null && !framePipeline.WaitForPendingGpuFrames(2000))
+            {
+                WriteLog("Pending GPU readbacks were slow or failed before releasing the capture texture.");
+            }
+
             frameCapture?.Dispose();
             frameCapture = null;
             audioCapture?.Complete();
@@ -416,7 +496,6 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             audioCapture?.Dispose();
             audioBuffer.Restore();
             ChartRenderVisualClock.End();
-            RestoreState();
 
             if (IsCancellationRequested)
             {
@@ -449,7 +528,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 yield break;
             }
 
-            StageText = "Finalizing video";
+            StageText = Settings.Text("chartRendererFinalizing");
+            outputStage = OutputStage.FinishingVideo;
             apiTask.SetState(ChartRenderTaskState.Finalizing);
             DetailText = Path.GetFileName(tempVideoPath);
             bool backgroundOk = false;
@@ -461,6 +541,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
 
             StageText = Settings.Text("chartRendererMuxing");
+            outputStage = OutputStage.Muxing;
             DetailText = Path.GetFileName(outputPath);
             backgroundOk = false;
             yield return RunBackground(() => encoder!.MuxAudioFile(capturedAudioPath), encoder, result, deleteTempOnCancel: true, deleteTempOnFailure: false, onDone: ok => backgroundOk = ok);
@@ -471,6 +552,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
 
             Cleanup(frameCapture, encoder, restoreEditor: false, deleteTemp: false);
+            outputStage = OutputStage.Done;
             result.Success = true;
             result.OutputPath = outputPath;
             result.Message = "OK";
@@ -509,25 +591,53 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
             thread.Start();
             bool canceled = false;
+            bool abandoned = false;
+            float cancelDeadline = 0f;
             while (!done.IsSet)
             {
                 if (!canceled && IsCancellationRequested)
                 {
+                    // Only kill FFmpeg here; the worker thread still owns the encoder and unwinds on
+                    // its own. Disposing it from this thread could leave the worker waiting forever.
                     canceled = true;
-                    encoder?.Dispose();
+                    cancelDeadline = Time.realtimeSinceStartup + BackgroundCancelTimeoutSeconds;
+                    encoder?.Abort();
                     result.Success = false;
                     result.Message = "Canceled.";
                     result.Canceled = true;
                     result.ErrorCode = ChartRenderErrorCode.Canceled;
+                    WriteLog("Cancel requested during " + StageText + "; FFmpeg aborted.");
+                }
+
+                if (canceled && Time.realtimeSinceStartup >= cancelDeadline)
+                {
+                    // Never leave the game stuck behind an active render task: give up on the worker
+                    // (it is a background thread) and finish the cancel.
+                    abandoned = true;
+                    // Kill once more before giving up, in case the first Abort raced the worker.
+                    encoder?.Abort();
+                    WriteLog("Background worker did not stop within " + BackgroundCancelTimeoutSeconds
+                        + " seconds after cancel; abandoning it.");
+                    break;
                 }
 
                 yield return null;
             }
 
-            thread.Join();
-            done.Dispose();
+            if (!abandoned)
+            {
+                thread.Join();
+                done.Dispose();
+            }
+
             if (canceled)
             {
+                if (!abandoned)
+                {
+                    encoder?.Dispose();
+                }
+
+                DeletePartialOutput();
                 if (deleteTempOnCancel)
                 {
                     DeleteTempDirectory();
@@ -587,20 +697,22 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 Directory.CreateDirectory(workspace);
                 Directory.CreateDirectory(export);
 
-                tempDirectory = Path.Combine(workspace, "CurrentRender");
-                if (Directory.Exists(tempDirectory))
-                {
-                    Directory.Delete(tempDirectory, recursive: true);
-                }
-
+                // A unique directory keeps an abandoned worker from blocking the next render; the
+                // old fixed "CurrentRender" path could still be held by FFmpeg after a timeout.
+                tempDirectory = Path.Combine(workspace, "CurrentRender_"
+                    + DateTime.Now.ToString("yyyyMMdd_HHmmss")
+                    + "_" + Guid.NewGuid().ToString("N").Substring(0, 8));
                 Directory.CreateDirectory(tempDirectory);
-                tempVideoPath = Path.Combine(tempDirectory, "temp_video.mp4");
+                CleanupStaleRenderDirectories(workspace, tempDirectory);
+                // MP4 cannot hold ProRes, so the intermediate video uses MOV for it.
+                bool proRes = ChartRenderOptionValues.NormalizeVideoCodec(settings.ChartRenderVideoCodec) == ChartRenderOptionValues.VideoCodecProRes;
+                tempVideoPath = Path.Combine(tempDirectory, proRes ? "temp_video.mov" : "temp_video.mp4");
                 capturedAudioPath = Path.Combine(tempDirectory, "audio.wav");
-                ChartRenderDiagnostics.Begin(Path.Combine(tempDirectory, "render.log"));
+                ChartRenderDiagnostics.BeginRender(workspace);
                 renderRange = configuration.Range;
                 WriteLog("Capture source locked for this render: " + captureSource + ".");
 
-                string extension = ChartRenderOptionValues.GetVideoFormatExtension(settings.ChartRenderVideoFormat);
+                string extension = ChartRenderOptionValues.GetOutputExtension(settings.ChartRenderVideoFormat, settings.ChartRenderVideoCodec);
                 string requestedName = configuration.OutputFileName;
                 string baseName = string.IsNullOrWhiteSpace(requestedName)
                     ? ChartRenderPaths.MakeSafeFileName(GetLevelName())
@@ -895,6 +1007,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private void Cleanup(IChartFrameCapture? frameCapture, FfmpegEncoder? encoder, bool restoreEditor, bool deleteTemp)
         {
             DisableRenderAutoPlayback(resetEndFloor: true);
+            if (framePipeline != null && !framePipeline.WaitForPendingGpuFrames(2000))
+            {
+                WriteLog("Pending GPU readbacks were slow or failed while cleaning up.");
+            }
+
             frameCapture?.Dispose();
             encoder?.Dispose();
             if (ReferenceEquals(this.frameCapture, frameCapture))
@@ -923,6 +1040,88 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             if (deleteTemp)
             {
                 DeleteTempDirectory();
+            }
+        }
+
+        // Logged before playback and twice during the render, so a render without music shows whether
+        // the song was playing, muted, at zero volume or had lost its sample data.
+        private void LogSongState(string stage)
+        {
+            try
+            {
+                scrConductor? conductor = ADOBase.conductor;
+                AudioSource? song = conductor?.song;
+                AudioClip? clip = song?.clip;
+                WriteLog(stage + " song state: clip=" + (clip == null ? "null" : clip.name)
+                    + " loadType=" + (clip == null ? "-" : clip.loadType.ToString())
+                    + " loadState=" + (clip == null ? "-" : clip.loadState.ToString())
+                    + " length=" + (clip == null ? "-" : Number(clip.length))
+                    + " playing=" + (song != null && song.isPlaying)
+                    + " time=" + (song == null ? "-" : Number(song.time))
+                    + " volume=" + (song == null ? "-" : Number(song.volume))
+                    + " mute=" + (song != null && song.mute)
+                    + " songposition=" + Number(conductor == null ? double.NaN : conductor.songposition_minusi) + ".");
+            }
+            catch (Exception ex)
+            {
+                WriteLog(stage + " song state unavailable: " + ex.Message);
+            }
+        }
+
+        // A mux that was killed leaves a truncated video at the final export path.
+        // The mux now writes to "<output>.part" first, but both are removed in case a write got through.
+        // The paths are unique to this render (GetUniqueOutputPath), so this cannot touch other files.
+        private void DeletePartialOutput()
+        {
+            DeleteOutputFile(outputPath);
+            DeleteOutputFile(string.IsNullOrEmpty(outputPath) ? string.Empty : outputPath + ".part");
+        }
+
+        private void DeleteOutputFile(string path)
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+            {
+                return;
+            }
+
+            try
+            {
+                File.Delete(path);
+                WriteLog("Deleted partial output after cancel: " + path);
+            }
+            catch (Exception ex)
+            {
+                WriteLog("Failed to delete partial output " + path + ": " + ex.Message);
+            }
+        }
+
+        private static void CleanupStaleRenderDirectories(string workspace, string currentDirectory)
+        {
+            try
+            {
+                foreach (string directory in Directory.EnumerateDirectories(workspace, "CurrentRender*"))
+                {
+                    if (string.Equals(directory, currentDirectory, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        // Only remove clearly stale leftovers; an abandoned worker may still be
+                        // writing, in which case the delete fails and is ignored.
+                        if (Directory.GetLastWriteTimeUtc(directory) < DateTime.UtcNow.AddHours(-1))
+                        {
+                            Directory.Delete(directory, recursive: true);
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+            catch
+            {
             }
         }
 
@@ -1029,6 +1228,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             catch (Exception ex)
             {
                 Main.Log("Chart render error: " + ex);
+                if (!string.IsNullOrEmpty(ChartRenderDiagnostics.LogPath))
+                {
+                    Main.Log("Chart render log: " + ChartRenderDiagnostics.LogPath);
+                }
+
                 failure = ex;
                 return false;
             }

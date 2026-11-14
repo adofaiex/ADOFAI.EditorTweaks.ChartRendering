@@ -42,7 +42,9 @@ export function createEventSource(onState: (state: WebUiState) => void): EventSo
 
 export function createMockState(): WebUiState {
   const settings: SettingsState = {
-    WebUiOpenHotkey: "Ctrl+Shift+E",
+    WebUiOpenHotkey: "F8",
+    WebUiOpenMode: "auto",
+    WebUiAllowLan: false,
     ChartRenderWorkspaceDirectory: "D:/ADOFAI/Workspace",
     ChartRenderExportDirectory: "D:/ADOFAI/Exports",
     ChartRenderWidth: 1920,
@@ -50,6 +52,7 @@ export function createMockState(): WebUiState {
     ChartRenderFps: 60,
     ChartRenderCrf: 18,
     ChartRenderBitrateMbps: 0,
+    ChartRenderConstantBitrate: false,
     ChartRenderPreset: "veryfast",
     ChartRenderEncoderMode: "auto-balanced",
     ChartRenderCaptureFormat: "rgba",
@@ -62,12 +65,18 @@ export function createMockState(): WebUiState {
     ChartRenderShowHitJudgments: true,
     ChartRenderUseSelectedRange: false,
     ChartRenderCustomMuxArgs: "",
+    ChartRenderVideoCodec: "h264",
+    ChartRenderHardwareEncoder: "auto",
+    ChartRenderHardwarePreset: "auto",
+    ChartRenderCpuPreset: "auto",
+    ChartRenderDetailedEncoderSettings: false,
+    FfmpegCustomPath: "",
   };
 
   const names = ["渲染输入保护", "谱面渲染"];
   return {
-    server: { connected: false, version: "演示状态" },
-    compatibility: { gameVersion: "1.3.2", editorVersion: "1.3.2", modVersion: "1.0.3" },
+    server: { connected: false, version: "演示状态", lanEnabled: false, lanUrl: "", lanUrls: [] },
+    compatibility: { gameVersion: "1.3.2", editorVersion: "1.3.2", modVersion: "1.1.0" },
     patches: names.map((name, index) => ({
       id: `mock-${index}`,
       name,
@@ -78,11 +87,19 @@ export function createMockState(): WebUiState {
     })),
     patchSummary: { active: 2, total: 2, registrationError: false },
     settings,
+    encoders: {
+      status: "ready",
+      detectedAt: "2026-11-10 20:00",
+      gpu: "NVIDIA GeForce RTX 3070",
+      results: { h264_nvenc: true, hevc_nvenc: true, av1_nvenc: false, h264_amf: false, hevc_amf: false, av1_amf: false, h264_qsv: false, hevc_qsv: false, av1_qsv: false, libx264: true, libx265: true, libsvtav1: true, "libaom-av1": true, libvvenc: true, prores_aw: true },
+    },
     render: {
       active: false,
       taskId: "",
       state: "Idle",
       cancelRequested: false,
+      writingOutput: false,
+      quitRefused: false,
       captureSource: "Camera",
       outputPath: "",
       message: "",

@@ -31,7 +31,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 {
                     ["id"] = status.Feature.ToString(),
                     ["name"] = status.Name,
-                    ["description"] = status.Feature == PatchFeature.RenderInputGuard ? "渲染期间屏蔽输入干扰" : "谱面画面、音频和视频背景渲染",
+                    ["description"] = status.Feature == PatchFeature.RenderInputGuard
+                        ? "渲染期间屏蔽输入干扰"
+                        : status.Feature == PatchFeature.RenderVisualTime
+                            ? "修正视频中星球转动、彩虹变色等动画过快"
+                            : "谱面画面、音频和视频背景渲染",
                     ["state"] = GetPatchState(status.State),
                     ["patchCount"] = status.PatchCount,
                     ["failedPatchName"] = status.FailedPatchName,
@@ -44,7 +48,10 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 ["server"] = new Dictionary<string, object>
                 {
                     ["connected"] = true,
-                    ["version"] = Main.Mod?.Info?.Version ?? "0.0.0"
+                    ["version"] = Main.Mod?.Info?.Version ?? "0.0.0",
+                    ["lanEnabled"] = WebUiHost.LanEnabled,
+                    ["lanUrl"] = WebUiHost.LanUrl,
+                    ["lanUrls"] = new List<string>(WebUiHost.LanUrls)
                 },
                 ["compatibility"] = new Dictionary<string, object>
                 {
@@ -60,6 +67,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                     ["registrationError"] = statuses.Count == 0
                 },
                 ["settings"] = BuildSettings(Main.Settings),
+                ["encoders"] = Features.ChartRendering.ChartEncoderCapabilities.BuildState(),
                 ["render"] = BuildRenderState(renderTask)
             };
         }
@@ -69,6 +77,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             return new Dictionary<string, object>
             {
                 ["WebUiOpenHotkey"] = settings.WebUiOpenHotkey,
+                ["WebUiOpenMode"] = settings.WebUiOpenMode ?? string.Empty,
+                ["WebUiAllowLan"] = settings.WebUiAllowLan,
                 ["ChartRenderWorkspaceDirectory"] = settings.ChartRenderWorkspaceDirectory ?? string.Empty,
                 ["ChartRenderExportDirectory"] = settings.ChartRenderExportDirectory ?? string.Empty,
                 ["ChartRenderWidth"] = settings.ChartRenderWidth,
@@ -76,18 +86,25 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 ["ChartRenderFps"] = settings.ChartRenderFps,
                 ["ChartRenderCrf"] = settings.ChartRenderCrf,
                 ["ChartRenderBitrateMbps"] = settings.ChartRenderBitrateMbps,
+                ["ChartRenderConstantBitrate"] = settings.ChartRenderConstantBitrate,
                 ["ChartRenderPreset"] = settings.ChartRenderPreset ?? string.Empty,
                 ["ChartRenderEncoderMode"] = settings.ChartRenderEncoderMode ?? string.Empty,
+                ["ChartRenderHardwareEncoder"] = settings.ChartRenderHardwareEncoder ?? string.Empty,
+                ["ChartRenderHardwarePreset"] = settings.ChartRenderHardwarePreset ?? string.Empty,
+                ["ChartRenderCpuPreset"] = settings.ChartRenderCpuPreset ?? string.Empty,
+                ["ChartRenderDetailedEncoderSettings"] = settings.ChartRenderDetailedEncoderSettings,
                 ["ChartRenderCaptureFormat"] = settings.ChartRenderCaptureFormat ?? string.Empty,
                 ["ChartRenderCaptureSource"] = settings.ChartRenderCaptureSource ?? string.Empty,
                 ["ChartRenderPreviewMode"] = settings.ChartRenderPreviewMode ?? string.Empty,
                 ["ChartRenderAudioFormat"] = settings.ChartRenderAudioFormat ?? string.Empty,
                 ["ChartRenderVideoFormat"] = settings.ChartRenderVideoFormat ?? string.Empty,
+                ["ChartRenderVideoCodec"] = settings.ChartRenderVideoCodec ?? string.Empty,
                 ["ChartRenderCompletionTailSeconds"] = settings.ChartRenderCompletionTailSeconds,
                 ["ChartRenderAudioSyncOffsetMs"] = settings.ChartRenderAudioSyncOffsetMs,
                 ["ChartRenderShowHitJudgments"] = settings.ChartRenderShowHitJudgments,
                 ["ChartRenderUseSelectedRange"] = settings.ChartRenderUseSelectedRange,
-                ["ChartRenderCustomMuxArgs"] = settings.ChartRenderCustomMuxArgs ?? string.Empty
+                ["ChartRenderCustomMuxArgs"] = settings.ChartRenderCustomMuxArgs ?? string.Empty,
+                ["FfmpegCustomPath"] = settings.FfmpegCustomPath ?? string.Empty
             };
         }
 
@@ -134,6 +151,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 ["taskId"] = task?.Id.ToString() ?? string.Empty,
                 ["state"] = task?.State.ToString() ?? "Idle",
                 ["cancelRequested"] = task != null && task.IsCancellationRequested,
+                // Frames are done but FFmpeg is still writing the file: closing the game now loses it.
+                ["writingOutput"] = task != null && task.State == ChartRenderTaskState.Finalizing,
+                // The game refused a close request in the last few seconds (ChartRenderQuitGuard).
+                ["quitRefused"] = task != null && !task.IsTerminal
+                    && UnityEngine.Time.realtimeSinceStartup - Features.ChartRendering.ChartRenderQuitGuard.LastRefusedAt <= 10f,
                 ["captureSource"] = task?.CaptureSource.ToString() ?? string.Empty,
                 ["outputPath"] = task?.OutputPath ?? string.Empty,
                 ["message"] = message,

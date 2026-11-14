@@ -17,6 +17,8 @@ export interface PatchStatus {
 
 export interface SettingsState {
   WebUiOpenHotkey: string;
+  WebUiOpenMode: string;
+  WebUiAllowLan: boolean;
   ChartRenderWorkspaceDirectory: string;
   ChartRenderExportDirectory: string;
   ChartRenderWidth: number;
@@ -24,6 +26,7 @@ export interface SettingsState {
   ChartRenderFps: number;
   ChartRenderCrf: number;
   ChartRenderBitrateMbps: number;
+  ChartRenderConstantBitrate: boolean;
   ChartRenderPreset: string;
   ChartRenderEncoderMode: string;
   ChartRenderCaptureFormat: string;
@@ -36,6 +39,12 @@ export interface SettingsState {
   ChartRenderShowHitJudgments: boolean;
   ChartRenderUseSelectedRange: boolean;
   ChartRenderCustomMuxArgs: string;
+  ChartRenderVideoCodec: string;
+  ChartRenderHardwareEncoder: string;
+  ChartRenderHardwarePreset: string;
+  ChartRenderCpuPreset: string;
+  ChartRenderDetailedEncoderSettings: boolean;
+  FfmpegCustomPath: string;
 }
 
 export interface RenderProgress {
@@ -58,6 +67,8 @@ export interface RenderState {
   taskId: string;
   state: string;
   cancelRequested: boolean;
+  writingOutput: boolean;
+  quitRefused: boolean;
   captureSource: string;
   outputPath: string;
   message: string;
@@ -68,6 +79,9 @@ export interface WebUiState {
   server: {
     connected: boolean;
     version: string;
+    lanEnabled: boolean;
+    lanUrl: string;
+    lanUrls: string[];
   };
   compatibility: {
     gameVersion: string;
@@ -82,4 +96,14 @@ export interface WebUiState {
   };
   settings: SettingsState;
   render: RenderState;
+  encoders: EncoderState;
+}
+
+// Encoder detection (ChartEncoderCapabilities). results maps an FFmpeg encoder name to whether it
+// works on this computer; it is empty until the first detection finishes.
+export interface EncoderState {
+  status: "unknown" | "detecting" | "ready";
+  detectedAt: string;
+  gpu: string;
+  results: Record<string, boolean>;
 }

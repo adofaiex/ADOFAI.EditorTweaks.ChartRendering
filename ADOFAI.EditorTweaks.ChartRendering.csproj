@@ -25,8 +25,11 @@
     <DefineConstants>TRACE</DefineConstants>
   </PropertyGroup>
 
+  <!-- 本机路径等个人设置放在 Local.props（不提交），模板见 Local.props.example / Per-machine settings go in Local.props (not committed) -->
+  <Import Project="Local.props" Condition="Exists('Local.props')" />
+
   <PropertyGroup>
-    <GameExePath>D:\Steam\steamapps\common\A Dance of Fire and Ice\A Dance of Fire and Ice.exe</GameExePath>
+    <GameExePath Condition="'$(GameExePath)' == ''">D:\Steam\steamapps\common\A Dance of Fire and Ice\A Dance of Fire and Ice.exe</GameExePath>
     <AutoLaunchGame>false</AutoLaunchGame>
     <BuildWebUi>true</BuildWebUi>
     <IncludeFfmpeg>true</IncludeFfmpeg>

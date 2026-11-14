@@ -40,6 +40,10 @@ button { cursor: pointer; }
 .brand-page { color: #b7cde2; font-size: 17px; }
 .topbar-actions { gap: 12px; color: var(--muted); font-size: 12px; }
 .connection-dot, .status-led { width: 7px; height: 7px; display: inline-block; border-radius: 50%; background: var(--warning); box-shadow: 0 0 8px rgba(240, 191, 105, 0.5); }
+/* Floats under the top bar so it does not add a row to the .app-shell grid. */
+.connection-lost-banner { position: fixed; top: 78px; left: 50%; transform: translateX(-50%); z-index: 50; width: min(760px, calc(100vw - 48px)); padding: 14px 18px; display: flex; gap: 12px; align-items: flex-start; color: var(--text); background: rgba(58, 12, 24, 0.95); border: 1px solid var(--danger); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); font-size: 13px; line-height: 1.6; }
+.connection-lost-banner > svg { flex: none; margin-top: 3px; color: var(--danger); font-size: 18px; }
+.connection-lost-banner strong { display: block; margin-bottom: 2px; color: var(--danger); font-size: 14px; }
 .connection-dot.is-online, .status-led { background: var(--success); box-shadow: 0 0 8px rgba(63, 224, 180, 0.6); }
 .connection-retry { display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; color: var(--accent); border: 1px solid rgba(61, 187, 226, 0.45); background: rgba(7, 45, 70, 0.7); font-size: 11px; }
 .connection-retry svg { font-size: 13px; }
@@ -105,17 +109,18 @@ button { cursor: pointer; }
 .setting-row > div:first-child { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
 .setting-row strong { color: var(--text); font-size: 13px; font-weight: 600; }
 .setting-row span { color: var(--muted); font-size: 11px; line-height: 1.45; }
-.select-field { width: 180px; flex: 0 0 auto; }
+.select-field { position: relative; width: 180px; flex: 0 0 auto; }
 .select-control { width: 100%; height: 34px; padding: 0 10px 0 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--text); background: #061f36; border: 1px solid var(--border); border-radius: 0; text-align: left; transition: border-color 160ms ease, background 160ms ease; }
 .select-control:hover, .select-control.is-open { border-color: var(--border-bright); background: #082944; }
 .select-value { min-width: 0; overflow: hidden; color: var(--text); font-size: 13px; line-height: 1; white-space: nowrap; text-overflow: ellipsis; }
 .select-chevron { flex: 0 0 auto; color: var(--muted); font-size: 14px; transition: transform 160ms ease; }
 .select-control.is-open .select-chevron { color: var(--accent); transform: rotate(180deg); }
-.select-menu { position: fixed; z-index: 1000; padding: 4px; border: 1px solid var(--border-bright); background: #082944; box-shadow: 0 14px 30px rgba(0, 0, 0, 0.5); }
+.select-menu { position: absolute; left: 0; top: calc(100% + 6px); width: 100%; z-index: 1000; max-height: min(280px, 50vh); overflow-y: auto; padding: 4px; border: 1px solid var(--border-bright); background: #082944; box-shadow: 0 14px 30px rgba(0, 0, 0, 0.5); }
 .select-option { width: 100%; min-height: 36px; padding: 0 10px 0 6px; display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center; gap: 4px; color: var(--text); background: transparent; border: 0; font-size: 13px; line-height: 1; text-align: left; }
 .select-option:hover, .select-option.is-selected { color: var(--text); background: rgba(59, 215, 255, 0.17); }
 .select-option.is-selected { color: var(--accent); }
 .select-option-check { display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 14px; }
+.select-option:disabled, .select-option:disabled:hover { color: var(--text); background: transparent; opacity: 0.38; cursor: not-allowed; }
 .number-control { display: flex !important; align-items: center; gap: 8px; }
 .number-input, .text-input { height: 34px; width: 120px; padding: 0 12px; color: var(--text); background: #061f36; border: 1px solid var(--border); border-radius: 0; outline: none; box-shadow: none; caret-color: var(--accent); font-size: 13px; transition: border-color 160ms ease, background 160ms ease; }
 .number-input { text-align: right; }

@@ -8,9 +8,35 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
     {
         private const int MaxBaseFileNameLength = 96;
 
+        // Order: the user's custom path, the FFmpeg bundled with the mod, then <game>\ffmpeg\ffmpeg.exe.
+        // When none exists the bundled path is returned, so the "missing FFmpeg" error names it.
         public static string GetFfmpegPath()
         {
-            return Main.Mod == null ? string.Empty : Path.Combine(Main.Mod.Path, "ThirdParty", "FFmpeg", "ffmpeg.exe");
+            string custom = ExpandPath(Main.Settings?.FfmpegCustomPath ?? string.Empty);
+            if (!string.IsNullOrEmpty(custom) && File.Exists(custom))
+            {
+                return custom;
+            }
+
+            string bundled = Main.Mod == null ? string.Empty : Path.Combine(Main.Mod.Path, "ThirdParty", "FFmpeg", "ffmpeg.exe");
+            if (!string.IsNullOrEmpty(bundled) && File.Exists(bundled))
+            {
+                return bundled;
+            }
+
+            try
+            {
+                string gameFfmpeg = Path.GetFullPath(Path.Combine(UnityEngine.Application.dataPath, "..", "ffmpeg", "ffmpeg.exe"));
+                if (File.Exists(gameFfmpeg))
+                {
+                    return gameFfmpeg;
+                }
+            }
+            catch
+            {
+            }
+
+            return bundled;
         }
 
         public static string GetWorkspaceDirectory(Settings settings)
@@ -64,7 +90,16 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
 
             string expanded = Environment.ExpandEnvironmentVariables(path.Trim());
-            return Path.GetFullPath(expanded);
+            try
+            {
+                return Path.GetFullPath(expanded);
+            }
+            catch
+            {
+                // Invalid characters must behave like an empty custom path, not crash the render
+                // before the bundled FFmpeg fallback is tried.
+                return string.Empty;
+            }
         }
     }
 }

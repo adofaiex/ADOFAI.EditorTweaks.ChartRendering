@@ -13,7 +13,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Patching
     {
         VideoBackgroundSync,
         RenderInputGuard,
-        ChartRendering
+        ChartRendering,
+        RenderVisualTime
     }
 
     internal enum PatchGroupState
@@ -108,7 +109,14 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Patching
                     typeof(ChartRenderAudioBufferCheckPatch),
                     typeof(ChartRenderCustomFrameRateScreenPatch)
                 },
-                PatchFeature.RenderInputGuard)
+                PatchFeature.RenderInputGuard),
+            // Kept separate so a game update that moves these visuals only disables this fix,
+            // not chart rendering itself.
+            new PatchGroupDefinition(
+                PatchFeature.RenderVisualTime,
+                "render-visual-time",
+                "Render visual time",
+                new[] { typeof(ChartRenderUnscaledTimePatch) })
         };
 
         private static readonly Dictionary<PatchFeature, PatchGroupStatus> statuses =

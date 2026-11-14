@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
+using System.Net.NetworkInformation;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -37,14 +38,27 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
         private string webRoot = string.Empty;
         private string accessToken = string.Empty;
         private string pageUrl = string.Empty;
+        private int localPort;
+        private WebUiLanProxy? lanProxy;
+        private string lanUrl = string.Empty;
+        private readonly List<string> lanUrls = new List<string>();
+        private bool lanStartAttempted;
         private string latestStateJson = "{}";
         private ChartRenderTask? renderTask;
+        private int lastEncoderChangeCount = -1;
         private Coroutine? openSettingsPageRoutine;
         private float nextStateBroadcastTime;
         private bool stateDirty = true;
         private int shutdownRequested;
 
         public static bool IsRunning => instance != null && instance.listener != null;
+
+        public static bool LanEnabled => instance != null && instance.lanProxy != null;
+
+        public static string LanUrl => instance?.lanUrl ?? string.Empty;
+
+        public static IReadOnlyList<string> LanUrls =>
+            instance != null ? (IReadOnlyList<string>)instance.lanUrls : Array.Empty<string>();
 
         public static void Ensure()
         {
@@ -79,6 +93,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
         {
             ProcessCommands();
             ObserveRenderTask();
+            UpdateLanProxy();
 
             if (WebUiHotkey.IsPressed(Main.Settings.WebUiOpenHotkey))
             {
@@ -90,8 +105,24 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
 
             if (ChartRenderService.IsActive && Input.GetKeyDown(KeyCode.Escape))
             {
-                ChartRenderApi.CurrentTask?.Cancel();
-                Main.Log("[WebUI] Render canceled by Escape.");
+                if (ChartRenderService.IsWritingOutput)
+                {
+                    Main.Log("[WebUI] Ignored Escape while the output file is being written. Use the web page cancel button if needed.");
+                }
+                else
+                {
+                    ChartRenderApi.CurrentTask?.Cancel();
+                    Main.Log("[WebUI] Render canceled by Escape.");
+                }
+            }
+
+            // Encoder detection runs on a background thread; its results are saved and shown from here.
+            ChartEncoderCapabilities.FlushIfDirty();
+            int encoderChanges = ChartEncoderCapabilities.ChangeCount;
+            if (encoderChanges != lastEncoderChangeCount)
+            {
+                lastEncoderChangeCount = encoderChanges;
+                stateDirty = true;
             }
 
             bool renderStateNeedsBroadcast = renderTask != null && !renderTask.IsTerminal;
@@ -135,6 +166,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 Name = "ADOFAI.EditorTweaks.ChartRendering.WebUiHttp"
             };
             listenerThread.Start();
+            UpdateLanProxy();
             Main.Log("[WebUI] Listening on 127.0.0.1. Open " + pageUrl);
             stateDirty = false;
         }
@@ -149,6 +181,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                     candidate.Prefixes.Add("http://127.0.0.1:" + port + "/");
                     candidate.Start();
                     listener = candidate;
+                    localPort = port;
                     pageUrl = "http://127.0.0.1:" + port + "/?token=" + accessToken;
                     return true;
                 }
@@ -159,6 +192,140 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             }
 
             return false;
+        }
+
+        private void UpdateLanProxy()
+        {
+            bool wanted = Main.Settings != null && Main.Settings.WebUiAllowLan && listener != null;
+            if (!wanted)
+            {
+                StopLanProxy();
+                return;
+            }
+
+            if (lanProxy != null)
+            {
+                return;
+            }
+
+            if (lanStartAttempted)
+            {
+                return;
+            }
+
+            lanStartAttempted = true;
+            WebUiLanProxy? proxy = WebUiLanProxy.TryStart(localPort, out int lanPort, out string error);
+            if (proxy == null)
+            {
+                Main.Log("[WebUI] LAN access could not start: " + error);
+                return;
+            }
+
+            lanProxy = proxy;
+            lanUrls.Clear();
+            foreach (string address in GetLanAddresses())
+            {
+                lanUrls.Add("http://" + address + ":" + lanPort + "/?token=" + accessToken);
+            }
+
+            lanUrl = lanUrls.Count > 0 ? lanUrls[0] : string.Empty;
+            Main.Log("[WebUI] LAN access enabled on port " + lanPort + ".");
+            foreach (string url in lanUrls)
+            {
+                Main.Log("[WebUI] LAN address: " + url);
+            }
+
+            if (lanUrls.Count == 0)
+            {
+                Main.Log("[WebUI] No LAN IPv4 address was found; use this machine's LAN IP with port "
+                    + lanPort + ".");
+            }
+
+            stateDirty = true;
+        }
+
+        private void StopLanProxy()
+        {
+            lanStartAttempted = false;
+            if (lanProxy == null)
+            {
+                return;
+            }
+
+            lanProxy.Stop();
+            lanProxy = null;
+            lanUrl = string.Empty;
+            lanUrls.Clear();
+            Main.Log("[WebUI] LAN access disabled.");
+            stateDirty = true;
+        }
+
+        private static List<string> GetLanAddresses()
+        {
+            List<string> candidates = new List<string>();
+            try
+            {
+                foreach (NetworkInterface networkInterface in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (networkInterface.OperationalStatus != OperationalStatus.Up
+                        || networkInterface.NetworkInterfaceType == NetworkInterfaceType.Loopback
+                        || networkInterface.NetworkInterfaceType == NetworkInterfaceType.Tunnel
+                        || networkInterface.NetworkInterfaceType == NetworkInterfaceType.Ppp)
+                    {
+                        continue;
+                    }
+
+                    foreach (UnicastIPAddressInformation address in networkInterface.GetIPProperties().UnicastAddresses)
+                    {
+                        if (address.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+                        {
+                            continue;
+                        }
+
+                        string text = address.Address.ToString();
+                        if (text.StartsWith("169.254.", StringComparison.Ordinal))
+                        {
+                            continue;
+                        }
+
+                        if (!candidates.Contains(text))
+                        {
+                            candidates.Add(text);
+                        }
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            // Prefer a normal home/office LAN address over VPN and virtual adapters.
+            candidates.Sort((a, b) => LanAddressRank(a).CompareTo(LanAddressRank(b)));
+            return candidates;
+        }
+
+        private static int LanAddressRank(string address)
+        {
+            if (address.StartsWith("192.168.", StringComparison.Ordinal))
+            {
+                return 0;
+            }
+
+            if (address.StartsWith("10.", StringComparison.Ordinal))
+            {
+                return 1;
+            }
+
+            if (address.StartsWith("172.", StringComparison.Ordinal))
+            {
+                string[] parts = address.Split('.');
+                if (parts.Length >= 2 && int.TryParse(parts[1], out int second) && second >= 16 && second <= 31)
+                {
+                    return 2;
+                }
+            }
+
+            return 3;
         }
 
         private void ListenLoop()
@@ -305,7 +472,20 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                     ExecuteOnMain(StartRender, context);
                     return;
                 case "/api/render/cancel":
-                    ExecuteOnMain(CancelRender, context);
+                    CancelRenderFromRequestThread(context);
+                    return;
+                case "/api/encoders/detect":
+                    ExecuteOnMain(() =>
+                    {
+                        // Probing starts FFmpeg with every encoder; not while a render is using the GPU.
+                        if (ChartRenderService.IsActive)
+                        {
+                            return new CommandResult(409, Error("渲染进行中，请在渲染结束后再重新检测。"));
+                        }
+
+                        ChartEncoderCapabilities.StartDetection();
+                        return StateResult();
+                    }, context);
                     return;
                 default:
                     WriteJson(context, 404, Error("Unknown WebUI API route."));
@@ -473,23 +653,36 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             return StateResult();
         }
 
-        private CommandResult CancelRender()
+        // Cancel is answered on the HTTP thread instead of going through ExecuteOnMain. When the encoder
+        // is slower than rendering (for example a slow CPU preset at 3 frames per second), the main
+        // thread spends most of each frame waiting for room in the encoder queue, so a command queued
+        // for it could sit there and the cancel button looked dead. ChartRenderTask.Cancel only sets
+        // an interlocked flag, which those waits check every 50 ms. The reply carries the last state
+        // the main thread published; the main thread publishes the canceling state on its next frame.
+        private void CancelRenderFromRequestThread(HttpListenerContext context)
         {
             ChartRenderTask? task = ChartRenderApi.CurrentTask;
             if (task == null)
             {
                 // A repeated cancel after the task has reached its terminal state is harmless.
-                // Return the final snapshot instead of making the UI report a false failure.
-                return renderTask != null ? StateResult() : new CommandResult(409, Error("没有正在运行的渲染任务。"));
+                WriteJson(context, renderTask != null ? 200 : 409,
+                    renderTask != null ? StateResponse() : Error("没有正在运行的渲染任务。"));
+                return;
             }
 
             if (!task.Cancel() && !task.IsCancellationRequested)
             {
-                return new CommandResult(409, Error("渲染任务无法取消。"));
+                WriteJson(context, 409, Error("渲染任务无法取消。"));
+                return;
             }
 
-            PublishState();
-            return StateResult();
+            Main.Log("[WebUI] Render cancel requested from the settings page.");
+            commands.Enqueue(new MainThreadCommand(() =>
+            {
+                PublishState();
+                return new CommandResult(200, new Dictionary<string, object>());
+            }));
+            WriteJson(context, 200, StateResponse());
         }
 
         private void ObserveRenderTask()
@@ -556,6 +749,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
         {
             Main.Settings.Normalize();
             Main.Settings.Save(Main.Mod!);
+            // A changed custom FFmpeg path changes which encoders are available.
+            ChartEncoderCapabilities.EnsureCurrent();
             stateDirty = true;
             PublishState();
         }
@@ -575,6 +770,12 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                     case "WebUiOpenHotkey":
                         settings.WebUiOpenHotkey = GetString(change.Value, settings.WebUiOpenHotkey);
                         break;
+                    case "WebUiOpenMode":
+                        settings.WebUiOpenMode = WebUiOpenTargets.Normalize(GetString(change.Value, settings.WebUiOpenMode));
+                        break;
+                    case "WebUiAllowLan":
+                        settings.WebUiAllowLan = GetBool(change.Value, settings.WebUiAllowLan);
+                        break;
                     case "ChartRenderWorkspaceDirectory": settings.ChartRenderWorkspaceDirectory = GetString(change.Value, settings.ChartRenderWorkspaceDirectory); break;
                     case "ChartRenderExportDirectory": settings.ChartRenderExportDirectory = GetString(change.Value, settings.ChartRenderExportDirectory); break;
                     case "ChartRenderWidth": settings.ChartRenderWidth = GetInt(change.Value, settings.ChartRenderWidth); break;
@@ -582,18 +783,25 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                     case "ChartRenderFps": settings.ChartRenderFps = GetInt(change.Value, settings.ChartRenderFps); break;
                     case "ChartRenderCrf": settings.ChartRenderCrf = GetInt(change.Value, settings.ChartRenderCrf); break;
                     case "ChartRenderBitrateMbps": settings.ChartRenderBitrateMbps = GetInt(change.Value, settings.ChartRenderBitrateMbps); break;
+                    case "ChartRenderConstantBitrate": settings.ChartRenderConstantBitrate = GetBool(change.Value, settings.ChartRenderConstantBitrate); break;
                     case "ChartRenderPreset": settings.ChartRenderPreset = GetString(change.Value, settings.ChartRenderPreset); break;
                     case "ChartRenderEncoderMode": settings.ChartRenderEncoderMode = GetString(change.Value, settings.ChartRenderEncoderMode); break;
+                    case "ChartRenderHardwareEncoder": settings.ChartRenderHardwareEncoder = GetString(change.Value, settings.ChartRenderHardwareEncoder); break;
+                    case "ChartRenderHardwarePreset": settings.ChartRenderHardwarePreset = GetString(change.Value, settings.ChartRenderHardwarePreset); break;
+                    case "ChartRenderCpuPreset": settings.ChartRenderCpuPreset = GetString(change.Value, settings.ChartRenderCpuPreset); break;
+                    case "ChartRenderDetailedEncoderSettings": settings.ChartRenderDetailedEncoderSettings = GetBool(change.Value, settings.ChartRenderDetailedEncoderSettings); break;
                     case "ChartRenderCaptureFormat": settings.ChartRenderCaptureFormat = GetString(change.Value, settings.ChartRenderCaptureFormat); break;
                     case "ChartRenderCaptureSource": settings.ChartRenderCaptureSource = GetString(change.Value, settings.ChartRenderCaptureSource); break;
                     case "ChartRenderPreviewMode": settings.ChartRenderPreviewMode = GetString(change.Value, settings.ChartRenderPreviewMode); break;
                     case "ChartRenderAudioFormat": settings.ChartRenderAudioFormat = GetString(change.Value, settings.ChartRenderAudioFormat); break;
                     case "ChartRenderVideoFormat": settings.ChartRenderVideoFormat = GetString(change.Value, settings.ChartRenderVideoFormat); break;
+                    case "ChartRenderVideoCodec": settings.ChartRenderVideoCodec = GetString(change.Value, settings.ChartRenderVideoCodec); break;
                     case "ChartRenderCompletionTailSeconds": settings.ChartRenderCompletionTailSeconds = GetFloat(change.Value, settings.ChartRenderCompletionTailSeconds); break;
                     case "ChartRenderAudioSyncOffsetMs": settings.ChartRenderAudioSyncOffsetMs = GetFloat(change.Value, settings.ChartRenderAudioSyncOffsetMs); break;
                     case "ChartRenderShowHitJudgments": settings.ChartRenderShowHitJudgments = GetBool(change.Value, settings.ChartRenderShowHitJudgments); break;
                     case "ChartRenderUseSelectedRange": settings.ChartRenderUseSelectedRange = GetBool(change.Value, settings.ChartRenderUseSelectedRange); break;
                     case "ChartRenderCustomMuxArgs": settings.ChartRenderCustomMuxArgs = GetString(change.Value, settings.ChartRenderCustomMuxArgs); break;
+                    case "FfmpegCustomPath": settings.FfmpegCustomPath = GetString(change.Value, settings.FfmpegCustomPath); break;
                 }
             }
 
@@ -607,6 +815,13 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 if (string.IsNullOrWhiteSpace(pageUrl))
                 {
                     Main.Log("[WebUI] The local service is not running; cannot open the settings page.");
+                    yield break;
+                }
+
+                string openMode = WebUiOpenTargets.Normalize(Main.Settings.WebUiOpenMode);
+                if (openMode == WebUiOpenTargets.Browser)
+                {
+                    OpenDefaultBrowser("Configured to use the system browser");
                     yield break;
                 }
 
@@ -700,6 +915,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             {
                 return;
             }
+
+            StopLanProxy();
 
             if (openSettingsPageRoutine != null)
             {

@@ -26,6 +26,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         public static bool ShowHitJudgments => instance?.task?.Request.ShowHitJudgments ?? Main.Settings.ChartRenderShowHitJudgments;
 
+        // Frames are all captured and FFmpeg is still finishing or muxing the output file.
+        public static bool IsWritingOutput => instance?.session?.IsWritingOutput == true;
+
         public static void Ensure()
         {
             if (instance != null)
@@ -143,14 +146,25 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 WorkspaceDirectory = source.ChartRenderWorkspaceDirectory,
                 OutputDirectory = source.ChartRenderExportDirectory,
                 VideoFormat = ParseVideoFormat(source.ChartRenderVideoFormat),
+                VideoCodec = ChartRenderOptionValues.ParseVideoCodec(source.ChartRenderVideoCodec),
                 AudioFormat = ParseAudioFormat(source.ChartRenderAudioFormat),
                 EncoderMode = ParseEncoderMode(source.ChartRenderEncoderMode),
+                HardwareEncoder = ChartRenderOptionValues.ParseHardwareEncoder(source.ChartRenderHardwareEncoder),
+                // The presets belong to the detailed encoder settings; in the simple view the encoder
+                // mode alone decides, so presets left over from the detailed view do not apply.
+                HardwarePreset = source.ChartRenderDetailedEncoderSettings
+                    ? ChartRenderOptionValues.ParseHardwarePreset(source.ChartRenderHardwarePreset)
+                    : ChartRenderHardwarePreset.FollowEncoderMode,
+                CpuPreset = source.ChartRenderDetailedEncoderSettings
+                    ? ChartRenderOptionValues.ParseCpuPreset(source.ChartRenderCpuPreset)
+                    : ChartRenderCpuPreset.FollowEncoderMode,
                 ReadbackFormat = ChartRenderOptionValues.NormalizeCaptureFormat(source.ChartRenderCaptureFormat) == ChartRenderOptionValues.CaptureBgra
                     ? ChartRenderReadbackFormat.Bgra
                     : ChartRenderReadbackFormat.Rgba,
                 PreviewMode = ParsePreviewMode(source.ChartRenderPreviewMode),
                 Quality = source.ChartRenderCrf,
                 BitrateMbps = source.ChartRenderBitrateMbps,
+                ConstantBitrate = source.ChartRenderConstantBitrate,
                 CustomEncoderPreset = source.ChartRenderPreset,
                 CustomMuxArguments = source.ChartRenderCustomMuxArgs,
                 CompletionTailSeconds = source.ChartRenderCompletionTailSeconds,
@@ -354,8 +368,12 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 || !Enum.IsDefined(typeof(ChartRenderPlaybackMode), request.PlaybackMode)
                 || !Enum.IsDefined(typeof(ChartRenderRangeMode), request.Range.Mode)
                 || !Enum.IsDefined(typeof(ChartRenderVideoFormat), request.VideoFormat)
+                || !Enum.IsDefined(typeof(ChartRenderVideoCodec), request.VideoCodec)
                 || !Enum.IsDefined(typeof(ChartRenderAudioFormat), request.AudioFormat)
                 || !Enum.IsDefined(typeof(ChartRenderEncoderMode), request.EncoderMode)
+                || !Enum.IsDefined(typeof(ChartRenderHardwareEncoder), request.HardwareEncoder)
+                || !Enum.IsDefined(typeof(ChartRenderHardwarePreset), request.HardwarePreset)
+                || !Enum.IsDefined(typeof(ChartRenderCpuPreset), request.CpuPreset)
                 || !Enum.IsDefined(typeof(ChartRenderReadbackFormat), request.ReadbackFormat)
                 || !Enum.IsDefined(typeof(ChartRenderPreviewMode), request.PreviewMode))
             {
@@ -469,10 +487,12 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 return false;
             }
 
-            if (!File.Exists(ChartRenderPaths.GetFfmpegPath()))
+            string ffmpegPath = ChartRenderPaths.GetFfmpegPath();
+            if (!File.Exists(ffmpegPath))
             {
                 errorCode = ChartRenderErrorCode.InitializationFailed;
-                error = "The bundled FFmpeg executable is missing.";
+                error = "FFmpeg executable was not found: " + ffmpegPath
+                    + ". Reinstall the mod or set a custom FFmpeg path.";
                 return false;
             }
 
@@ -491,8 +511,12 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 ChartRenderFps = request.FramesPerSecond,
                 ChartRenderCrf = request.Quality,
                 ChartRenderBitrateMbps = request.BitrateMbps,
+                ChartRenderConstantBitrate = request.ConstantBitrate,
                 ChartRenderPreset = request.CustomEncoderPreset,
                 ChartRenderEncoderMode = ToInternal(request.EncoderMode),
+                ChartRenderHardwareEncoder = ChartRenderOptionValues.FormatHardwareEncoder(request.HardwareEncoder),
+                ChartRenderHardwarePreset = ChartRenderOptionValues.FormatHardwarePreset(request.HardwarePreset),
+                ChartRenderCpuPreset = ChartRenderOptionValues.FormatCpuPreset(request.CpuPreset),
                 ChartRenderCaptureFormat = request.ReadbackFormat == ChartRenderReadbackFormat.Bgra
                     ? ChartRenderOptionValues.CaptureBgra
                     : ChartRenderOptionValues.CaptureRgba,
@@ -502,6 +526,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 ChartRenderPreviewMode = ToInternal(request.PreviewMode),
                 ChartRenderAudioFormat = ToInternal(request.AudioFormat),
                 ChartRenderVideoFormat = ToInternal(request.VideoFormat),
+                ChartRenderVideoCodec = ChartRenderOptionValues.FormatVideoCodec(request.VideoCodec),
                 ChartRenderCompletionTailSeconds = request.CompletionTailSeconds,
                 ChartRenderAudioSyncOffsetMs = request.AudioSyncOffsetMilliseconds,
                 ChartRenderShowHitJudgments = request.ShowHitJudgments,

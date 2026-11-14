@@ -81,6 +81,7 @@
             <!-- NuGetPackageRoot may not end with a separator (for example with recent .NET SDKs). -->
             <SharpSevenZipLicenseFile Include="$(NuGetPackageRoot)\sharpsevenzip\2.0.109\LICENSE" Condition="'$(IncludeSharpSevenZip)' == 'true'" />
             <FilesToCopy Include="$(ProjectDir)Info.json" />
+            <FilesToCopy Include="$(ProjectDir)LICENSE" Condition="Exists('$(ProjectDir)LICENSE')" />
             <ResourceFiles Include="$(ProjectDir)Resources\**\*" Exclude="$(ProjectDir)Resources\**\*\" />
             <WebUiFiles Include="$(ProjectDir)webui\dist\**\*" Exclude="$(ProjectDir)webui\dist\**\*\" />
             <ThirdPartyFiles Include="$(ProjectDir)ThirdParty\FFmpeg\**\*" Exclude="$(ProjectDir)ThirdParty\FFmpeg\**\*\" Condition="'$(IncludeThirdParty)' == 'true'" />

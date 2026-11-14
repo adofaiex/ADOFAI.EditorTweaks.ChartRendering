@@ -15,6 +15,12 @@ namespace ADOFAI.EditorTweaks.ChartRendering
         private const int MaxFps = 240;
 
         public string WebUiOpenHotkey = WebUiHotkey.Default;
+        // How the hotkey opens the settings page: auto (Steam overlay, then browser), steam, browser.
+        public string WebUiOpenMode = WebUiOpenTargets.Auto;
+        // Opt-in LAN access. The loopback server stays local; a TCP proxy forwards LAN connections.
+        public bool WebUiAllowLan;
+        // Optional ffmpeg.exe to use instead of the bundled one. Empty = bundled.
+        public string FfmpegCustomPath = string.Empty;
         public string ChartRenderWorkspaceDirectory = string.Empty;
         public string ChartRenderExportDirectory = string.Empty;
         public int ChartRenderWidth = 1920;
@@ -22,13 +28,26 @@ namespace ADOFAI.EditorTweaks.ChartRendering
         public int ChartRenderFps = 60;
         public int ChartRenderCrf = 18;
         public int ChartRenderBitrateMbps = ChartRenderBitratePresets.AutoBitrateMbps;
+        // Target the configured bitrate instead of constant quality. Default false keeps CRF/VBR.
+        public bool ChartRenderConstantBitrate;
         public string ChartRenderPreset = "veryfast";
         public string ChartRenderEncoderMode = ChartRenderOptionValues.EncoderAutoBalanced;
+        // Auto prefers NVENC, then AMD AMF, then Intel QSV; the CPU encoder is the final fallback.
+        public string ChartRenderHardwareEncoder = ChartRenderOptionValues.HardwareEncoderAuto;
+        public string ChartRenderHardwarePreset = ChartRenderOptionValues.PresetFollowEncoderMode;
+        public string ChartRenderCpuPreset = ChartRenderOptionValues.PresetFollowEncoderMode;
+        // Settings page shows the detailed encoder settings (encoder + preset) instead of the simple
+        // encoder mode. The two presets above are only used while this is on.
+        public bool ChartRenderDetailedEncoderSettings;
+        // Encoder detection results (ChartEncoderCapabilities), not a preference: kept by "reset to
+        // defaults", and re-detected automatically when the GPU or FFmpeg changes.
+        public string EncoderCapabilitiesCache = string.Empty;
         public string ChartRenderCaptureFormat = ChartRenderOptionValues.CaptureRgba;
         public string ChartRenderCaptureSource = ChartRenderOptionValues.CaptureSourceCamera;
         public string ChartRenderPreviewMode = ChartRenderOptionValues.PreviewFull;
         public string ChartRenderAudioFormat = ChartRenderOptionValues.AudioFormatAac;
         public string ChartRenderVideoFormat = ChartRenderOptionValues.VideoFormatMp4;
+        public string ChartRenderVideoCodec = ChartRenderOptionValues.VideoCodecH264;
         public float ChartRenderCompletionTailSeconds = 5f;
         public float ChartRenderAudioSyncOffsetMs;
         public bool ChartRenderShowHitJudgments = true;
@@ -64,6 +83,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering
         public void Normalize()
         {
             WebUiOpenHotkey = WebUiHotkey.NormalizeOrDefault(WebUiOpenHotkey);
+            WebUiOpenMode = WebUiOpenTargets.Normalize(WebUiOpenMode);
             ChartRenderWidth = MakeEven(Mathf.Clamp(ChartRenderWidth, MinSize, MaxWidth));
             ChartRenderHeight = MakeEven(Mathf.Clamp(ChartRenderHeight, MinSize, MaxHeight));
             ChartRenderFps = Mathf.Clamp(ChartRenderFps, 1, MaxFps);
@@ -71,21 +91,36 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             ChartRenderBitrateMbps = Mathf.Clamp(ChartRenderBitrateMbps, ChartRenderBitratePresets.AutoBitrateMbps, ChartRenderBitratePresets.MaxBitrateMbps);
             ChartRenderPreset = string.IsNullOrWhiteSpace(ChartRenderPreset) ? "veryfast" : ChartRenderPreset.Trim();
             ChartRenderEncoderMode = ChartRenderOptionValues.NormalizeEncoderMode(ChartRenderEncoderMode);
+            ChartRenderHardwareEncoder = ChartRenderOptionValues.NormalizeHardwareEncoder(ChartRenderHardwareEncoder);
+            ChartRenderHardwarePreset = ChartRenderOptionValues.NormalizeHardwarePreset(ChartRenderHardwarePreset);
+            ChartRenderCpuPreset = ChartRenderOptionValues.NormalizeCpuPreset(ChartRenderCpuPreset);
+            // The custom encoder mode only exists in the detailed encoder view; settings saved before
+            // that view existed keep their custom mode by opening it.
+            if (ChartRenderEncoderMode == ChartRenderOptionValues.EncoderCustom)
+            {
+                ChartRenderDetailedEncoderSettings = true;
+            }
             ChartRenderCaptureFormat = ChartRenderOptionValues.NormalizeCaptureFormat(ChartRenderCaptureFormat);
             ChartRenderCaptureSource = ChartRenderOptionValues.NormalizeCaptureSource(ChartRenderCaptureSource);
             ChartRenderPreviewMode = ChartRenderOptionValues.NormalizePreviewMode(ChartRenderPreviewMode);
             ChartRenderAudioFormat = ChartRenderOptionValues.NormalizeAudioFormat(ChartRenderAudioFormat);
             ChartRenderVideoFormat = ChartRenderOptionValues.NormalizeVideoFormat(ChartRenderVideoFormat);
+            ChartRenderVideoCodec = ChartRenderOptionValues.NormalizeVideoCodec(ChartRenderVideoCodec);
             ChartRenderCompletionTailSeconds = Mathf.Max(0f, ChartRenderCompletionTailSeconds);
             ChartRenderAudioSyncOffsetMs = Mathf.Clamp(ChartRenderAudioSyncOffsetMs, -5000f, 5000f);
             ChartRenderWorkspaceDirectory = ChartRenderWorkspaceDirectory ?? string.Empty;
             ChartRenderExportDirectory = ChartRenderExportDirectory ?? string.Empty;
             ChartRenderCustomMuxArgs = ChartRenderCustomMuxArgs ?? string.Empty;
+            FfmpegCustomPath = (FfmpegCustomPath ?? string.Empty).Trim().Trim('"');
+            EncoderCapabilitiesCache = EncoderCapabilitiesCache ?? string.Empty;
         }
 
         public void ResetAllDefaults(UnityModManager.ModEntry modEntry)
         {
             WebUiOpenHotkey = WebUiHotkey.Default;
+            WebUiOpenMode = WebUiOpenTargets.Auto;
+            WebUiAllowLan = false;
+            FfmpegCustomPath = string.Empty;
             ChartRenderWorkspaceDirectory = Path.Combine(modEntry.Path, "Workspace");
             ChartRenderExportDirectory = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "ADOFAI Renders");
@@ -94,13 +129,19 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             ChartRenderFps = 60;
             ChartRenderCrf = 18;
             ChartRenderBitrateMbps = ChartRenderBitratePresets.AutoBitrateMbps;
+            ChartRenderConstantBitrate = false;
             ChartRenderPreset = "veryfast";
             ChartRenderEncoderMode = ChartRenderOptionValues.EncoderAutoBalanced;
+            ChartRenderHardwareEncoder = ChartRenderOptionValues.HardwareEncoderAuto;
+            ChartRenderHardwarePreset = ChartRenderOptionValues.PresetFollowEncoderMode;
+            ChartRenderCpuPreset = ChartRenderOptionValues.PresetFollowEncoderMode;
+            ChartRenderDetailedEncoderSettings = false;
             ChartRenderCaptureFormat = ChartRenderOptionValues.CaptureRgba;
             ChartRenderCaptureSource = ChartRenderOptionValues.CaptureSourceCamera;
             ChartRenderPreviewMode = ChartRenderOptionValues.PreviewFull;
             ChartRenderAudioFormat = ChartRenderOptionValues.AudioFormatAac;
             ChartRenderVideoFormat = ChartRenderOptionValues.VideoFormatMp4;
+            ChartRenderVideoCodec = ChartRenderOptionValues.VideoCodecH264;
             ChartRenderCompletionTailSeconds = 5f;
             ChartRenderAudioSyncOffsetMs = 0f;
             ChartRenderShowHitJudgments = true;

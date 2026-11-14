@@ -39,7 +39,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.RenderInputGuard
         {
             private static bool Prefix(ref bool __result, scrController __instance)
             {
-                if (!ChartRenderService.IsActive)
+                if (!ChartRenderService.IsActive || ChartRenderPlaybackController.IsRestoringEditMode)
                 {
                     return true;
                 }

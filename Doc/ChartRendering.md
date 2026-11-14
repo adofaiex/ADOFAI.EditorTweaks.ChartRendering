@@ -4,7 +4,7 @@
 
 - 不录桌面。
 - 默认摄像机模式输出不带屏幕空间 UI 的纯净谱面画面。
-- 兼容模式输出 Unity 最终游戏画面，包括额外摄像机、游戏 UI 和编辑器 UI。
+- 游戏画面模式按设置的分辨率离屏渲染完整游戏画面，包括额外摄像机、游戏 UI 和编辑器 UI；无法离屏渲染时退回按窗口分辨率截屏。
 - 两种模式都不会把 Web 设置页或渲染进度录入成品。
 - 支持编辑器自定义谱面、`scnGame` 自定义关卡、官谱和旧官谱场景。
 - 成品帧率由设置决定，机器慢只影响等待时间，不影响视频时间轴。
@@ -24,14 +24,15 @@
 | `ChartRenderOptionValues.cs` | 统一管理编码档位、回读格式、预览模式等设置值。 |
 | `ChartRenderRange.cs` | 解析整首/选中段落渲染范围，估算片段时长，提供片段结束检测。 |
 | `ChartFrameCapture.cs` | 定义统一捕获接口、后端工厂、摄像机捕获和共享 GPU readback 帧。 |
-| `ChartGameViewFrameCapture.cs` | 在帧末按当前游戏分辨率捕获最终游戏画面并异步读回。 |
+| `ChartOffscreenGameViewCapture.cs` | 游戏画面模式：把所有摄像机和屏幕空间画布临时重定向到离屏纹理，按设置的分辨率捕获完整画面。 |
+| `ChartGameViewFrameCapture.cs` | 游戏画面模式的退回方案：在帧末按当前游戏分辨率截取最终画面并异步读回。 |
 | `ChartUnityAudioCapture.cs` | 使用 Unity `AudioRenderer` 离线捕获音频并写成 float32 WAV。 |
 | `FfmpegEncoder.cs` | FFmpeg rawvideo pipe、GPU/CPU 编码选择、视频完成、音频 mux。 |
 | `ChartRenderVisualClock.cs` | 强制视觉时间轴，Patch conductor 的 `songposition_minusi` 读写。 |
 | `ChartRenderAutoPlayer.cs` | 渲染期间自动补打砖块，并 suppress 异步输入角度修正。 |
 | `ChartRenderAudioPatches.cs` | 屏蔽界面音效进入成品音频。 |
 | `ChartRenderJudgmentPatches.cs` | 根据设置隐藏或显示判定文字。 |
-| `ChartRenderDiagnostics.cs` | 写 `render.log`，记录球抽搐、跳块、失败、FFmpeg 等诊断信息。 |
+| `ChartRenderDiagnostics.cs` | 每次渲染写一份 `Workspace\Logs\render_时间.log`（保留最近 10 份），记录渲染前后内存占用，以及球抽搐、跳块、失败、FFmpeg 等诊断信息。 |
 | `ChartRenderPaths.cs` | FFmpeg 路径、工作区路径、导出路径、文件名清理。 |
 | `ChartRenderResult.cs` | 渲染结果 DTO。 |
 
@@ -75,7 +76,7 @@ Web 设置页只负责从当前用户设置创建请求，不直接持有 `Chart
    - 创建 workspace 和 export 目录。
    - 清空并重建 `CurrentRender`。
    - 设置 `temp_video.mp4`、`audio.wav`、最终输出路径。
-   - 开启 `ChartRenderDiagnostics.Begin(render.log)`。
+   - 开启 `ChartRenderDiagnostics.BeginRender(workspace)`，日志写入 `Workspace\Logs\`，不随 `CurrentRender` 删除。
    - 根据设置解析渲染范围：整首谱面，或编辑器当前选中的连续砖块段落。
 3. `TryStartPlayback()`：
    - `ChartRenderPlaybackController` 保存旧状态。
@@ -239,7 +240,7 @@ Patch 点：
 - 片段渲染时，Patch `scrPlayer.Hit` 阻止任何命中越过选中段落终点。
 - Patch `AsyncInputUtils.AdjustAngle(scrPlayer, ulong)`：渲染时直接跳过，并记录 suppressed 次数。
 
-如果球又抽搐，优先看 `render.log`：
+如果球又抽搐，优先看 `Workspace\Logs\` 里最新的 `render_*.log`：
 
 - `AUTO_HIT ... FLOOR_JUMP`
 - `AUTO_HIT_GUARD_REACHED`
@@ -301,9 +302,9 @@ AudioRenderer 捕获结果
 - `ChartRenderMemoryBudget`：根据实际输出宽高限制 GPU pending 数和编码队列容量。
 - 数组池与有界队列：复用单帧大数组，并在编码跟不上时对渲染协程施加反压。
 - Unity `AudioRenderer`：按相同固定帧时钟捕获游戏最终混音。
-- FFmpeg：接收 rawvideo、编码 H.264，并与 WAV 合成为 MP4、MKV 或 MOV。
+- FFmpeg：接收 rawvideo、按所选编码格式编码，并与 WAV 合成为 MP4、MKV 或 MOV。
 
-`IChartFrameCapture` 只暴露当前后端真实的 `Width`、`Height`、`PixelFormatName`、`RequiresVerticalFlip` 和 `RequestFrame()`。`ChartRenderSession` 必须在后端创建完成后，使用这些真实尺寸创建内存预算与 FFmpeg，而不是继续使用设置中的摄像机宽高。这样游戏画面模式才能完整遵守当前窗口尺寸。
+`IChartFrameCapture` 只暴露当前后端真实的 `Width`、`Height`、`PixelFormatName`、`RequiresVerticalFlip` 和 `RequestFrame()`。`ChartRenderSession` 必须在后端创建完成后，使用这些真实尺寸创建内存预算与 FFmpeg，而不是继续使用设置中的摄像机宽高。这样游戏画面模式退回截屏时，才能完整遵守当前窗口尺寸。
 
 ### 摄像机渲染
 
@@ -359,55 +360,23 @@ vflip,pad=ceil(iw/2)*2:ceil(ih/2)*2
 
 ### 游戏画面渲染
 
-兼容模式不修改任何摄像机的 `targetTexture`。每个需要新画面的输出帧在 `WaitForEndOfFrame` 后执行：
+从 CheryTools AET Recorder（sui）移植。游戏画面模式默认使用离屏渲染（`ChartOffscreenGameViewCapture`），按设置里的宽高输出，可以超过显示器分辨率（例如 2K 屏输出 4K）：
 
-```text
-ScreenCapture.CaptureScreenshotIntoRenderTexture(captureTarget)
-    -> AsyncGPUReadback(captureTarget)
-    -> 现有 ChartRenderFramePipeline
-```
+- 官方摄像机链 `Bgcamstatic`、`BGcam`、`camobj`，以及其他所有直接画到屏幕的已启用摄像机，`targetTexture` 临时改为离屏捕获纹理。RT 摄像机模式下负责把 `camRT` 显示到屏幕的 `Overlaycam` 被跳过，因为摄像机链已经直接画进捕获纹理。
+- Screen Space - Overlay 画布临时改为 Screen Space - Camera，挂到专用的 UI 摄像机上，同样画进捕获纹理；`scaleFactor` 乘以 `min(输出宽/屏幕宽, 输出高/屏幕高)`，使布局与屏幕上一致。CanvasScaler 在此期间暂停，避免它按离屏纹理重新计算缩放。
+- 已绑定到不可见摄像机（未启用或画到自己纹理）的 Screen Space - Camera 画布不接管，否则会把游戏里本来看不到的内容（例如编辑器工坊缩略图摄像机上的 Neo Cosmos 标志）带进视频。World Space 画布由已重定向的世界摄像机自然画出。
+- 每帧 `LateUpdate` 重新扫描一次，渲染中途出现的摄像机和画布从出现的那一帧起就被捕获。
+- 屏幕上显示捕获纹理的带黑边预览（预览模式为极简时只显示黑屏）。若同时安装了 CheryTools，它的面板画布不会被录进视频。
+- 结束时全部还原。捕获纹理是 RenderTexture，回读需要 FFmpeg `vflip`。
 
-源纹理和成品尺寸固定为开始渲染时的 `Screen.width x Screen.height`，不读取摄像机模式保存的输出宽高，也不创建缩放或留边用的中间纹理。为了兼容 `yuv420p`，极少数奇数宽高窗口会由 FFmpeg 在右侧或底部补最多一个黑色像素。
+退回截屏（`ChartGameViewFrameCapture`）的情况：
 
-这个模式会捕获额外摄像机、游戏 UI、编辑器 UI、IMGUI 和屏幕空间 Canvas。Web 设置页位于外部浏览器，不会出现在游戏画面里；`Esc` 用于取消，输入保护仍保持生效，按键不会传给暂停或游玩逻辑。摄像机预览的 `Overlaycam + quad` 不会启用，避免递归画面。
+- 设置的宽高不可用（小于 16、超过 7680×4320 或为奇数）。API 调用方（如 Creplay）以前在游戏画面模式下不需要传宽高，可能传 0x0，这时按原方式截屏。
+- 创建离屏渲染时出错。
 
-渲染期间如果 `Screen.width` 或 `Screen.height` 改变，会立即终止本次任务并走既有清理和播放状态恢复流程，不会在存在 pending GPU readback 时重建纹理。`render.log` 会记录捕获模式、游戏分辨率、回读格式、垂直翻转策略和屏幕捕获异常。
+截屏方式在 `WaitForEndOfFrame` 后执行 `ScreenCapture.CaptureScreenshotIntoRenderTexture`，尺寸固定为开始渲染时的 `Screen.width × Screen.height`，回读方向已与视频一致，不应用 `vflip`。渲染期间如果窗口尺寸改变，会立即终止任务并走统一清理流程。
 
-摄像机 RenderTexture 的原始回读需要 FFmpeg `vflip`；`ScreenCapture` 的回读方向已经与视频输入一致，因此游戏画面模式不应用 `vflip`。两个后端通过 `IChartFrameCapture.RequiresVerticalFlip` 分别声明方向，避免重复翻转。
-
-### 为什么游戏画面模式不能超分辨率渲染
-
-这里的“不能”指不能像摄像机模式一样，在保持当前游戏窗口为 1080p 的同时获得包含所有最终 UI 和屏幕效果的原生 4K 帧。
-
-游戏画面模式捕获的是 Unity 已经提交到当前游戏画面的最终结果。到 `WaitForEndOfFrame` 时：
-
-1. 所有摄像机已经按当前游戏分辨率完成光栅化。
-2. Screen Space Overlay、编辑器 UI、IMGUI 和最终屏幕效果已经按当前屏幕像素布局完成合成。
-3. `ScreenCapture` 取得的是这张已经完成的最终帧，而不是一份可以指定任意分辨率重新渲染的场景描述。
-
-因此，假设当前游戏分辨率是 `1920×1080`：
-
-- 创建一个 `3840×2160` RenderTexture 再把最终画面写进去，只会放大已有的 1080p 像素。
-- 使用 `Graphics.Blit`、FFmpeg scale 或其他插值，同样只是双线性/双三次放大，不会恢复缺失的几何采样、文字边缘和后处理细节。
-- 输出文件虽然可以标记为 4K，但不属于原生 4K 渲染；文档和 UI 不应把这种放大称为“超分辨率渲染”。
-
-要真正让“最终游戏画面”按 4K 生成，必须让 Unity 的整个展示链本身运行在 4K，包括所有摄像机、各类 Canvas、IMGUI、后处理和最终 backbuffer。简单地把官方三台摄像机改到 4K RenderTexture 无法覆盖 Screen Space Overlay 与其他额外摄像机；逐个接管所有摄像机和 UI Canvas 又会失去兼容模式“所见即所得”的意义，并且很容易漏掉特殊谱面的自定义合成。
-
-项目也不在任务开始后临时调用 `Screen.SetResolution`，原因是：
-
-- 会改变玩家窗口或全屏模式，可能受显示器最大分辨率、Windows 缩放和显卡设置限制。
-- 分辨率变化会让 UI 重新布局，捕获内容不再等同于用户开始渲染前看到的画面。
-- 已提交的 `AsyncGPUReadbackRequest` 仍引用旧纹理；运行中重建会增加资源生命周期和驱动错误风险。
-- 无边框全屏、独占全屏和窗口模式对超出桌面的尺寸行为不一致，无法保证所有用户得到相同结果。
-
-当前策略因此是：
-
-- 游戏画面模式：忠实输出当前 `Screen.width × Screen.height`，不进行伪超分辨率放大。
-- 摄像机模式：需要 2K、4K 或自定义高分辨率时使用，得到真正重新渲染的摄像机画面。
-- 如果必须得到包含 UI 的原生 4K 游戏画面，应先在游戏或显卡驱动中把实际游戏分辨率设置为 4K，再开始游戏画面渲染。
-- 后期 AI 放大可以作为外部处理步骤，但它不属于本渲染器的原生画面管线。
-
-这也是渲染期间禁止改变窗口尺寸的原因。`ChartGameViewFrameCapture` 在每次 `RequestFrame()` 前比较当前 `Screen.width/height` 与构造时记录的值；变化后立即抛出明确错误，让会话进入统一清理路径，而不是生成前后分辨率不同或引用已释放纹理的视频。
+已知局限：离屏渲染是逐个接管摄像机和画布，不再是对屏幕最终画面的“所见即所得”截取。宽高比与窗口不同时，界面元素的位置可能与游戏中略有差异；某些特殊谱面如果有本方案没覆盖到的自定义画面合成，可能在视频中缺失。遇到这种情况请在 `render_*.log` 中查看 `Offscreen capture redirected camera` 和 `Offscreen capture took canvas` 记录，确认接管了哪些摄像机和画布。
 
 ## 内存预算与队列
 
@@ -461,6 +430,8 @@ Patch `scrSfx.PlaySfx(... InterfaceParent ...)` 的原因：
 
 ## FFmpeg
 
+自带的是 gyan.dev 的 **9.0.2 full build**（`ffmpeg-release-full.7z`，约 228 MB），不是精简版。它提供 `libsvtav1`、`libvvenc`、`libaom-av1`、`libx264`、`libx265` 等编码器。`scripts/EnsureFfmpeg.ps1` 会用 `curl.exe` 下载、用 Windows 自带的 `tar.exe` 解压 `.7z`，并在发现旧的 essentials 版本时自动替换。
+
 `FfmpegEncoder` 的视频命令输入默认是 raw RGBA，实验模式可切到 raw BGRA：
 
 ```text
@@ -472,9 +443,11 @@ Patch `scrSfx.PlaySfx(... InterfaceParent ...)` 的原因：
 -an
 -vf <camera: vflip,pad | game-view: pad>
 <encoder args>
--pix_fmt yuv420p
-temp_video.mp4
+-pix_fmt yuv420p | yuv420p10le | yuv422p10le
+temp_video.mp4 | temp_video.mov
 ```
+
+像素格式按编码器决定：H.264/HEVC/AV1 的 CPU 和 NVENC 使用 `yuv420p`，AMD AMF / Intel QSV 使用 `nv12`，H.266/VVC 使用 `yuv420p10le`（libvvenc 只接受 10-bit 输入），ProRes 使用 `yuv422p10le`。ProRes 的临时文件是 `.mov`，其他编码器是 `.mp4`。
 
 编码档位：
 
@@ -489,29 +462,50 @@ temp_video.mp4
 
 默认输出仍是 H.264 + yuv420p + AAC + MP4 + faststart，播放器和投稿兼容性主要来自这些封装和格式，而不是 `fast` / `veryfast` 名称本身。
 
-## 码率限制
+编码格式：
 
-视频编码会设置目标码率、最大码率和缓冲区：
+| 格式 | 编码器 | 说明 |
+| --- | --- | --- |
+| H.264 | `h264_nvenc` / `libx264` | 默认，兼容性最好。 |
+| HEVC / H.265 | `hevc_nvenc` / `libx265` | MP4/MOV 中加 `-tag:v hvc1`，苹果设备才能播放。 |
+| AV1 | `av1_nvenc`（RTX 40 系或更新）/ `libsvtav1` / `libaom-av1` | full build 自带 `libsvtav1`，没有 AV1 硬件编码时比 `libaom` 快很多。 |
+| H.266 / VVC | `libvvenc` | 实验性，不推荐。只有 CPU 编码，1080p60 约每秒数帧；输出 10-bit，MP4/MKV/MOV 都能封装，但大多数播放器、剪辑软件和网站不支持。 |
+| ProRes 422 HQ | `prores_aw` | 只输出 MOV，体积很大，适合剪辑。 |
+
+硬件编码器：
+
+| 厂商 | H.264 | HEVC | AV1 |
+| --- | --- | --- | --- |
+| NVIDIA | `h264_nvenc` | `hevc_nvenc` | `av1_nvenc`（RTX 40 系或更新） |
+| AMD | `h264_amf` | `hevc_amf` | `av1_amf`（RDNA 3 或更新） |
+| Intel | `h264_qsv` | `hevc_qsv` | `av1_qsv`（Arc 或更新） |
+
+`ChartRenderHardwareEncoder = auto` 时依次尝试 NVENC → AMD AMF → Intel QSV，驱动或硬件不支持时回退 CPU。也可以在设置页或 API 指定 NVIDIA / Intel / AMD；指定的编码器不可用时同样回退 CPU。AMF/QSV 使用 `nv12` 像素格式；`p1`–`p7` 是共享速度档位，AMF/QSV 会换算成各自的预设。
+
+## 码率控制
+
+`ChartRenderBitrateMbps = 0` 且关闭恒定比特率时，画质只由 CRF 控制。填写非 0 码率时使用 VBR/ABR：
 
 ```text
--b:v <target>M
--maxrate <target * 1.5>M
--bufsize <target * 2>M
+-b:v <target>M -maxrate <target * 1.5>M -bufsize <target * 2>M
 ```
 
-NVENC 使用 VBR：
+NVENC 的 VBR 会额外带 `-rc vbr -cq <quality>`。
 
-```text
--rc vbr -cq <quality> -b:v <target>M -maxrate <max>M -bufsize <buffer>M
-```
+高级设置里的“恒定比特率（CBR）”打开后，按填写的码率输出；码率为 0 时使用推荐码率，CRF 不再生效。CBR 是按编码器尽力而为，不是逐段完全恒定：
 
-x264 使用单次 ABR：
+| 编码器 | CBR 实现 |
+| --- | --- |
+| NVENC H.264 / HEVC / AV1 | `-rc cbr -b:v <target>M -maxrate <target>M -bufsize <buffer>M`，真正 CBR。 |
+| AMD AMF H.264 / HEVC / AV1 | `-rc cbr -b:v <target>M -maxrate <target>M -bufsize <buffer>M`。 |
+| Intel QSV H.264 / HEVC / AV1 | `-b:v <target>M -maxrate <target>M -bufsize <buffer>M -low_delay_brc 1`。 |
+| libx264 / libx265 | `-b:v <target>M -minrate <target>M -maxrate <target>M -bufsize <buffer>M`。MP4 不支持 HRD/filler，不加 `strict-cbr=1`，属于受 VBV 限制的近似 CBR。 |
+| libsvtav1 | `-svtav1-params rc=2:pred-struct=1` 加目标码率；CBR 需要低延迟模式，压缩效率会下降。 |
+| libaom-av1 | `-b:v <target>M -minrate <target>M -maxrate <target>M -bufsize <buffer>M`。 |
+| libvvenc | FFmpeg 只暴露 VBR/ABR，没有 CBR，自动退回 VBR 并在日志里说明。 |
+| ProRes | 不适用，码率由 profile 决定，忽略 CBR。 |
 
-```text
--b:v <target>M -maxrate <max>M -bufsize <buffer>M
-```
-
-`ChartRenderBitrateMbps = 0` 表示自动推荐。60fps 常见推荐：
+60fps 常见推荐码率：
 
 | 分辨率 | 推荐码率 |
 | --- | ---: |

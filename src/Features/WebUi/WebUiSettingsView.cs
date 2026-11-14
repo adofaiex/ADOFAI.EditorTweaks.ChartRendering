@@ -32,7 +32,15 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             GUILayout.Label(settings.WebUiOpenHotkey, GUILayout.Width(140f));
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
-            GUILayout.Label("服务仅监听本机地址，启用 Mod 后按下快捷键打开设置页面。", GUI.skin.label);
+            GUILayout.Label("默认 F8；也可以用 F9、Ctrl+Shift+U 等，避免和编辑器快捷键冲突。", GUI.skin.label);
+            bool allowLan = GUILayout.Toggle(settings.WebUiAllowLan, "允许局域网访问（地址含控制令牌，请勿公开）");
+            if (allowLan != settings.WebUiAllowLan)
+            {
+                settings.WebUiAllowLan = allowLan;
+                settings.Save(Main.Mod!);
+            }
+
+            GUILayout.Label("默认只监听本机；开启局域网访问后，同一局域网的手机/平板可以打开 Web 设置页。", GUI.skin.label);
             GUILayout.EndVertical();
         }
     }

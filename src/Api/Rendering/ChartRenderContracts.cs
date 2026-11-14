@@ -32,6 +32,58 @@ namespace ADOFAI.EditorTweaks.Api.Rendering
         Mov = 2
     }
 
+    // Added after API v1 shipped; requests that do not set it keep encoding H.264.
+    public enum ChartRenderVideoCodec
+    {
+        H264 = 0,
+        Hevc = 1,
+        Av1 = 2,
+        ProRes = 3,
+        // Added after API v1 shipped. Experimental H.266/VVC (CPU only, very slow, limited player support).
+        Vvc = 4
+    }
+
+    // Added after API v1 shipped. Which hardware encoder to use for H.264/HEVC/AV1. Auto prefers
+    // NVENC, then AMD AMF, then Intel QSV. CPU encoders are used when the requested one is unavailable.
+    public enum ChartRenderHardwareEncoder
+    {
+        Auto = 0,
+        Nvidia = 1,
+        Intel = 2,
+        Amd = 3
+    }
+
+    // Added after API v1 shipped. NVENC speed/quality preset; FollowEncoderMode keeps the preset the
+    // encoder mode picks (p1/p4/p6), as before. Not used by the Custom encoder mode or ProRes.
+    public enum ChartRenderHardwarePreset
+    {
+        FollowEncoderMode = 0,
+        P1 = 1,
+        P2 = 2,
+        P3 = 3,
+        P4 = 4,
+        P5 = 5,
+        P6 = 6,
+        P7 = 7
+    }
+
+    // Added after API v1 shipped. CPU encoder preset in x264/x265 terms (AV1 CPU encoders get the
+    // equivalent speed); FollowEncoderMode keeps the preset the encoder mode picks, as before. Slower
+    // presets slow the whole render down, because frames wait for the encoder.
+    public enum ChartRenderCpuPreset
+    {
+        FollowEncoderMode = 0,
+        Ultrafast = 1,
+        Superfast = 2,
+        Veryfast = 3,
+        Faster = 4,
+        Fast = 5,
+        Medium = 6,
+        Slow = 7,
+        Slower = 8,
+        Veryslow = 9
+    }
+
     public enum ChartRenderAudioFormat
     {
         Aac = 0,
@@ -155,9 +207,18 @@ namespace ADOFAI.EditorTweaks.Api.Rendering
 
         public ChartRenderVideoFormat VideoFormat { get; set; } = ChartRenderVideoFormat.Mp4;
 
+        // ProRes always produces a .mov file, whatever VideoFormat says.
+        public ChartRenderVideoCodec VideoCodec { get; set; } = ChartRenderVideoCodec.H264;
+
         public ChartRenderAudioFormat AudioFormat { get; set; } = ChartRenderAudioFormat.Aac;
 
         public ChartRenderEncoderMode EncoderMode { get; set; } = ChartRenderEncoderMode.AutoBalanced;
+
+        public ChartRenderHardwareEncoder HardwareEncoder { get; set; } = ChartRenderHardwareEncoder.Auto;
+
+        public ChartRenderHardwarePreset HardwarePreset { get; set; } = ChartRenderHardwarePreset.FollowEncoderMode;
+
+        public ChartRenderCpuPreset CpuPreset { get; set; } = ChartRenderCpuPreset.FollowEncoderMode;
 
         public ChartRenderReadbackFormat ReadbackFormat { get; set; } = ChartRenderReadbackFormat.Rgba;
 
@@ -166,6 +227,12 @@ namespace ADOFAI.EditorTweaks.Api.Rendering
         public int Quality { get; set; } = 18;
 
         public int BitrateMbps { get; set; }
+
+        // Added after API v1 shipped. When true, the encoder targets BitrateMbps instead of encoding
+        // at a constant quality. BitrateMbps = 0 uses the recommended bitrate. This is best effort:
+        // H.264/HEVC use VBV-constrained bitrate control, H.266/VVC falls back to VBR, and ProRes
+        // ignores it (ProRes bitrate comes from its profile). Default false keeps the old behavior.
+        public bool ConstantBitrate { get; set; }
 
         public string CustomEncoderPreset { get; set; } = "veryfast";
 
@@ -193,12 +260,17 @@ namespace ADOFAI.EditorTweaks.Api.Rendering
                 OutputDirectory = OutputDirectory ?? string.Empty,
                 OutputFileName = OutputFileName ?? string.Empty,
                 VideoFormat = VideoFormat,
+                VideoCodec = VideoCodec,
                 AudioFormat = AudioFormat,
                 EncoderMode = EncoderMode,
+                HardwareEncoder = HardwareEncoder,
+                HardwarePreset = HardwarePreset,
+                CpuPreset = CpuPreset,
                 ReadbackFormat = ReadbackFormat,
                 PreviewMode = PreviewMode,
                 Quality = Quality,
                 BitrateMbps = BitrateMbps,
+                ConstantBitrate = ConstantBitrate,
                 CustomEncoderPreset = CustomEncoderPreset ?? string.Empty,
                 CustomMuxArguments = CustomMuxArguments ?? string.Empty,
                 CompletionTailSeconds = CompletionTailSeconds,

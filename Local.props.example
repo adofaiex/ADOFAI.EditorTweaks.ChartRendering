@@ -1,0 +1,16 @@
+<Project>
+  <!--
+    复制本文件为 Local.props 并按本机情况修改。Local.props 不会被提交。
+    Copy this file to Local.props and adjust it for your machine. Local.props is not committed.
+  -->
+  <PropertyGroup>
+    <!-- 游戏可执行文件路径 / Path to the game executable -->
+    <GameExePath>D:\SteamLibrary\steamapps\common\A Dance of Fire and Ice\A Dance of Fire and Ice.exe</GameExePath>
+
+    <!-- 构建后是否复制到游戏 Mods 目录 / Copy the build into the game's Mods folder -->
+    <EnableModDeployment>false</EnableModDeployment>
+
+    <!-- 是否生成发布 zip / Create the release zip -->
+    <CreateModPackage>false</CreateModPackage>
+  </PropertyGroup>
+</Project>
