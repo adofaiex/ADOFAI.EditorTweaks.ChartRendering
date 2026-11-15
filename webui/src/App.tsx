@@ -626,7 +626,7 @@ function RenderPage({ state, offline, onSettings, onOpenDocument, onStart, onCan
         {codecNote ? <InfoBlock text={codecNote} /> : null}
         {encoderNote ? <InfoBlock text={encoderNote} /> : null}
         <SettingSwitch label="渲染时显示判定文字" description="控制成品视频中是否显示 Perfect、Early、Late 等判定文字。" value={state.settings.ChartRenderShowHitJudgments} onChange={(value) => onSettings({ ChartRenderShowHitJudgments: value })} disabled={settingsLocked} />
-        <SettingSwitch label="兼容其他按键显示 Mod（实验性）" description="游戏画面模式下，让 JipperResourcePack 的雨键和 KPS 跟随视频时间。出现画面异常时可以关闭。" value={state.settings.ChartRenderCompatKeyViewers} onChange={(value) => onSettings({ ChartRenderCompatKeyViewers: value })} disabled={settingsLocked} />
+        <SettingSwitch label="兼容其他按键显示 Mod（实验性）" description="游戏画面模式下，让 JRP、JKV、Quartz 的雨键、KPS 和按键动画跟随视频时间。出现画面异常时可以关闭。" value={state.settings.ChartRenderCompatKeyViewers} onChange={(value) => onSettings({ ChartRenderCompatKeyViewers: value })} disabled={settingsLocked} />
         <SettingSwitch label="仅渲染选中段落" description="开启后需要在编辑器中框选至少两个连续砖块。" value={state.settings.ChartRenderUseSelectedRange} onChange={(value) => onSettings({ ChartRenderUseSelectedRange: value })} disabled={settingsLocked} />
       </div>
       <DisclosureButton label={advancedOpen ? "隐藏高级设置" : "显示高级设置"} open={advancedOpen} onClick={() => setAdvancedOpen((open) => !open)} disabled={false} />

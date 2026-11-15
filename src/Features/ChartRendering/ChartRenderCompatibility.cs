@@ -9,6 +9,8 @@ using UnityEngine.UI;
 namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 {
     // Optional clock adapter for third-party key viewers that animate with wall-clock time.
+    // This class handles JRP (JipperResourcePack) and drives the separate JKV and Quartz adapters
+    // (ChartRenderJkvAdapter, ChartRenderQuartzAdapter) from the same render lifecycle.
     //
     // Jipper KeyViewer reads Stopwatch for rain/KPS. During an offline render one output frame
     // represents exactly 1/fps of video regardless of how long encoding takes, so every clock read
@@ -165,6 +167,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 }
 
                 discoveryEnabled = true;
+                // JKV and Quartz have their own adapters; each fails on its own without affecting JRP.
+                RunOtherAdapters(() => ChartRenderJkvAdapter.Begin(fps), "JKV begin");
+                RunOtherAdapters(() => ChartRenderQuartzAdapter.Begin(fps), "Quartz begin");
                 if (!adapterReady)
                 {
                     ApplyJipperKeyViewerAdapter();
@@ -182,6 +187,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         public static void Tick(int frameIndex)
         {
+            RunOtherAdapters(() => ChartRenderJkvAdapter.Tick(frameIndex), "JKV tick");
+            RunOtherAdapters(() => ChartRenderQuartzAdapter.Tick(frameIndex), "Quartz tick");
             lock (Sync)
             {
                 lastFrameIndex = Math.Max(0, frameIndex);
@@ -204,6 +211,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         public static void End()
         {
+            RunOtherAdapters(ChartRenderJkvAdapter.End, "JKV end");
+            RunOtherAdapters(ChartRenderQuartzAdapter.End, "Quartz end");
             lock (Sync)
             {
                 if (active)
@@ -231,6 +240,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         public static void Shutdown()
         {
+            RunOtherAdapters(ChartRenderJkvAdapter.Shutdown, "JKV shutdown");
+            RunOtherAdapters(ChartRenderQuartzAdapter.Shutdown, "Quartz shutdown");
             lock (Sync)
             {
                 active = false;
@@ -255,6 +266,18 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                         Main.Log("Could not remove the Jipper KeyViewer compatibility adapter: " + exception.Message);
                     }
                 }
+            }
+        }
+
+        private static void RunOtherAdapters(Action action, string what)
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception exception)
+            {
+                ChartRenderDiagnostics.Log("Key viewer compatibility (" + what + ") failed: " + exception.Message);
             }
         }
 

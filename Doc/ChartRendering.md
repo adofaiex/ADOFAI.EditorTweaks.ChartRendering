@@ -29,7 +29,10 @@
 | `ChartUnityAudioCapture.cs` | 使用 Unity `AudioRenderer` 离线捕获音频并写成 float32 WAV。 |
 | `FfmpegEncoder.cs` | FFmpeg rawvideo pipe、GPU/CPU 编码选择、视频完成、音频 mux。 |
 | `ChartRenderVisualClock.cs` | 强制视觉时间轴，Patch conductor 的 `songposition_minusi` 读写。 |
-| `ChartRenderCompatibility.cs` | 可选的第三方 Mod 渲染时钟适配；目前处理 Jipper 雨键和 KPS。 |
+| `ChartRenderCompatibility.cs` | 可选的第三方按键显示渲染时钟适配；处理 JRP，并驱动 JKV、Quartz 适配器。 |
+| `ChartRenderJkvAdapter.cs` | JipperKeyViewer 的时钟适配。 |
+| `ChartRenderQuartzAdapter.cs` | Quartz 按键显示的时钟适配。 |
+| `ChartRenderContinuousClock.cs` | 把一个真实时钟映射到渲染时间轴，并在渲染结束时连续交接。 |
 | `ChartRenderAutoPlayer.cs` | 渲染期间自动补打砖块，并 suppress 异步输入角度修正。 |
 | `ChartRenderAudioPatches.cs` | 屏蔽界面音效进入成品音频。 |
 | `ChartRenderJudgmentPatches.cs` | 根据设置隐藏或显示判定文字。 |
@@ -222,7 +225,22 @@ Patch 点：
 - 同时支持 `long` 和 `ulong` 版本的 `CurrentTicks`。适配器失败会整体回滚并继续普通渲染，停用 Mod 时会移除兼容补丁。
 - `ChartRenderCompatKeyViewers` 默认开启，可在设置页关闭。摄像机模式不包含 KeyViewer 画布，因此不会启用此适配器。
 
-其他按键显示 Mod 不应直接复用 Jipper 的私有方法补丁；应根据它实际使用的时间源和输入路径添加独立的小适配器。
+其他按键显示 Mod 不应直接复用 Jipper 的私有方法补丁；应根据它实际使用的时间源和输入路径添加独立的小适配器。三个适配器各自失败、各自回滚，互不影响，也不影响渲染本身。
+
+#### JipperKeyViewer（JKV）
+
+- JKV 的雨键、按键缩放、计数器弹跳和 KPS 使用 `Time.unscaledTime`、`Time.unscaledDeltaTime` 和 `Stopwatch`。按键输入由 JKV 自己的回放垫片（`KeySource`）提供，Creplay 会驱动它，所以只需要适配时钟，不处理输入。
+- 1.7.2 和 master 的调用点不同，所以不按方法名写死：扫描 JKV 程序集里 `JipperKeyViewer.KeyViewer` 命名空间的类型（排除 `.Editor`，包括编译器生成的迭代器类），找出读取上述时钟的方法，只替换这些读取。任一方法补丁失败就整体回滚。
+- `unscaledTime` 和每个 `Stopwatch` 实例各用一个 `ChartRenderContinuousClock`：渲染中按视频时间前进，渲染结束后从结束点按真实速度继续。`unscaledDeltaTime` 渲染中返回 `1 / fps`（渲染时 `Time.captureFramerate = fps`，每个 Unity 帧正好一个视频帧）。
+- 不修改 `Time.realtimeSinceStartup`（JKV 只用它做图片加载节流）。
+
+#### Quartz（UMM 版，v2.1.1 / v3）
+
+- Quartz 按键显示的所有时间（雨键、过渡、计数、图表、JS 面板、输入时间戳）都来自内部的 `KvClock.Now`。Quartz 自带 `KvClock.SetExternal(Func<double>)` / `ClearExternal()`，切换时会自动重新对齐，不会跳变。
+- 适配器渲染开始时调用 `SetExternal(视频秒数)`，结束时调用 `ClearExternal()`，不使用 Harmony。
+- 不调用公开的 `KvExternalDriver.Begin`：它会同时屏蔽真实按键、改用驱动注入的按键，而 AETC 拿不到按键码。按键仍按 Quartz 原来的方式进入。
+- 如果有其他回放渲染器正在使用 `KvExternalDriver`，适配器不接管，也不在结束时清掉别人的时钟。
+- Quartz 的模块是异步加载的；渲染开始时没找到，会每 300 帧重试一次。
 
 ## 自动打击与防球抽搐
 
