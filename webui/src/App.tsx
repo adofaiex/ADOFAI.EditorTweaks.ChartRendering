@@ -70,6 +70,10 @@ const settingLabels: Record<string, Record<string, string>> = {
     Camera: "摄像机渲染（推荐）",
     GameView: "游戏画面渲染（包含界面）",
   },
+  ChartRenderGameViewBackend: {
+    offscreen: "离屏渲染（支持自定义分辨率）",
+    screen: "最终屏幕捕获（兼容优先）",
+  },
   ChartRenderPreviewMode: { full: "完整", dim: "暗色", minimal: "极简", Full: "完整", Dim: "暗色", Minimal: "极简" },
   ChartRenderAudioFormat: { aac: "AAC", flac: "FLAC（无损）", alac: "ALAC（无损）", AAC: "AAC", FLAC: "FLAC（无损）", ALAC: "ALAC（无损）" },
   ChartRenderVideoFormat: {
@@ -609,7 +613,8 @@ function RenderPage({ state, offline, onSettings, onOpenDocument, onStart, onCan
       <div className="settings-grid">
         <SettingText label="导出目录" value={state.settings.ChartRenderExportDirectory} onChange={(value) => onSettings({ ChartRenderExportDirectory: value })} disabled={settingsLocked} />
         <SettingSelect label="画面捕获方式" group="ChartRenderCaptureSource" value={state.settings.ChartRenderCaptureSource} options={["camera", "game-view"]} onChange={(value) => onSettings({ ChartRenderCaptureSource: value })} disabled={settingsLocked} />
-        {isGameView ? <InfoBlock text="游戏画面模式会在后台按下面设置的分辨率渲染完整画面（包括界面），可以超过显示器分辨率；屏幕上只显示预览。分辨率的宽高比建议和游戏窗口一致，否则界面元素的位置可能与游戏中略有不同。" /> : null}
+        {isGameView ? <SettingSelect label="游戏画面捕获后端" group="ChartRenderGameViewBackend" value={state.settings.ChartRenderGameViewBackend} options={["offscreen", "screen"]} onChange={(value) => onSettings({ ChartRenderGameViewBackend: value })} disabled={settingsLocked} /> : null}
+        {isGameView ? <InfoBlock text={state.settings.ChartRenderGameViewBackend === "screen" ? "最终屏幕捕获会直接截取游戏最终画面，兼容性最好，但输出分辨率跟随游戏窗口，无法输出高于窗口的分辨率。" : "离屏渲染会在后台按下面设置的分辨率渲染完整画面（包括界面），可以超过显示器分辨率；屏幕上只显示预览。分辨率的宽高比建议和游戏窗口一致，否则界面元素的位置可能与游戏中略有不同。"} /> : null}
         <PresetSetting label="分辨率预设" options={["1080p", "2K", "4K", "9:16", "21:9"]} active={getResolutionPreset(state.settings.ChartRenderWidth, state.settings.ChartRenderHeight)} onSelect={(preset) => onSettings(resolutionPresets[preset])} disabled={settingsLocked} />
         <SettingNumber label="视频宽度" value={state.settings.ChartRenderWidth} min={16} max={7680} step={2} onChange={(value) => onSettings({ ChartRenderWidth: value })} suffix="px" disabled={settingsLocked} />
         <SettingNumber label="视频高度" value={state.settings.ChartRenderHeight} min={16} max={4320} step={2} onChange={(value) => onSettings({ ChartRenderHeight: value })} suffix="px" disabled={settingsLocked} />
@@ -621,6 +626,7 @@ function RenderPage({ state, offline, onSettings, onOpenDocument, onStart, onCan
         {codecNote ? <InfoBlock text={codecNote} /> : null}
         {encoderNote ? <InfoBlock text={encoderNote} /> : null}
         <SettingSwitch label="渲染时显示判定文字" description="控制成品视频中是否显示 Perfect、Early、Late 等判定文字。" value={state.settings.ChartRenderShowHitJudgments} onChange={(value) => onSettings({ ChartRenderShowHitJudgments: value })} disabled={settingsLocked} />
+        <SettingSwitch label="兼容其他按键显示 Mod（实验性）" description="游戏画面模式下，让 JipperResourcePack 的雨键和 KPS 跟随视频时间。出现画面异常时可以关闭。" value={state.settings.ChartRenderCompatKeyViewers} onChange={(value) => onSettings({ ChartRenderCompatKeyViewers: value })} disabled={settingsLocked} />
         <SettingSwitch label="仅渲染选中段落" description="开启后需要在编辑器中框选至少两个连续砖块。" value={state.settings.ChartRenderUseSelectedRange} onChange={(value) => onSettings({ ChartRenderUseSelectedRange: value })} disabled={settingsLocked} />
       </div>
       <DisclosureButton label={advancedOpen ? "隐藏高级设置" : "显示高级设置"} open={advancedOpen} onClick={() => setAdvancedOpen((open) => !open)} disabled={false} />

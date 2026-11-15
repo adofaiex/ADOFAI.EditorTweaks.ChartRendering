@@ -44,6 +44,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering
         public string EncoderCapabilitiesCache = string.Empty;
         public string ChartRenderCaptureFormat = ChartRenderOptionValues.CaptureRgba;
         public string ChartRenderCaptureSource = ChartRenderOptionValues.CaptureSourceCamera;
+        // Game-view only: offscreen supports custom output resolution; screen follows the game window.
+        public string ChartRenderGameViewBackend = ChartRenderOptionValues.GameViewBackendOffscreen;
         public string ChartRenderPreviewMode = ChartRenderOptionValues.PreviewFull;
         public string ChartRenderAudioFormat = ChartRenderOptionValues.AudioFormatAac;
         public string ChartRenderVideoFormat = ChartRenderOptionValues.VideoFormatMp4;
@@ -51,6 +53,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering
         public float ChartRenderCompletionTailSeconds = 5f;
         public float ChartRenderAudioSyncOffsetMs;
         public bool ChartRenderShowHitJudgments = true;
+        // Experimental: keep supported third-party key-viewer animations on the render timeline.
+        public bool ChartRenderCompatKeyViewers = true;
         public bool ChartRenderUseSelectedRange;
         public bool ChartRenderAdvancedSettingsExpanded;
         public bool ChartRenderProfessionalSettingsExpanded;
@@ -102,6 +106,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             }
             ChartRenderCaptureFormat = ChartRenderOptionValues.NormalizeCaptureFormat(ChartRenderCaptureFormat);
             ChartRenderCaptureSource = ChartRenderOptionValues.NormalizeCaptureSource(ChartRenderCaptureSource);
+            ChartRenderGameViewBackend = ChartRenderOptionValues.NormalizeGameViewBackend(ChartRenderGameViewBackend);
             ChartRenderPreviewMode = ChartRenderOptionValues.NormalizePreviewMode(ChartRenderPreviewMode);
             ChartRenderAudioFormat = ChartRenderOptionValues.NormalizeAudioFormat(ChartRenderAudioFormat);
             ChartRenderVideoFormat = ChartRenderOptionValues.NormalizeVideoFormat(ChartRenderVideoFormat);
@@ -138,6 +143,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             ChartRenderDetailedEncoderSettings = false;
             ChartRenderCaptureFormat = ChartRenderOptionValues.CaptureRgba;
             ChartRenderCaptureSource = ChartRenderOptionValues.CaptureSourceCamera;
+            ChartRenderGameViewBackend = ChartRenderOptionValues.GameViewBackendOffscreen;
             ChartRenderPreviewMode = ChartRenderOptionValues.PreviewFull;
             ChartRenderAudioFormat = ChartRenderOptionValues.AudioFormatAac;
             ChartRenderVideoFormat = ChartRenderOptionValues.VideoFormatMp4;
@@ -145,6 +151,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             ChartRenderCompletionTailSeconds = 5f;
             ChartRenderAudioSyncOffsetMs = 0f;
             ChartRenderShowHitJudgments = true;
+            ChartRenderCompatKeyViewers = true;
             ChartRenderUseSelectedRange = false;
             ChartRenderAdvancedSettingsExpanded = false;
             ChartRenderProfessionalSettingsExpanded = false;

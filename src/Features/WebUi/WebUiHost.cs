@@ -792,6 +792,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                     case "ChartRenderDetailedEncoderSettings": settings.ChartRenderDetailedEncoderSettings = GetBool(change.Value, settings.ChartRenderDetailedEncoderSettings); break;
                     case "ChartRenderCaptureFormat": settings.ChartRenderCaptureFormat = GetString(change.Value, settings.ChartRenderCaptureFormat); break;
                     case "ChartRenderCaptureSource": settings.ChartRenderCaptureSource = GetString(change.Value, settings.ChartRenderCaptureSource); break;
+                    case "ChartRenderGameViewBackend": settings.ChartRenderGameViewBackend = GetString(change.Value, settings.ChartRenderGameViewBackend); break;
                     case "ChartRenderPreviewMode": settings.ChartRenderPreviewMode = GetString(change.Value, settings.ChartRenderPreviewMode); break;
                     case "ChartRenderAudioFormat": settings.ChartRenderAudioFormat = GetString(change.Value, settings.ChartRenderAudioFormat); break;
                     case "ChartRenderVideoFormat": settings.ChartRenderVideoFormat = GetString(change.Value, settings.ChartRenderVideoFormat); break;
@@ -799,6 +800,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                     case "ChartRenderCompletionTailSeconds": settings.ChartRenderCompletionTailSeconds = GetFloat(change.Value, settings.ChartRenderCompletionTailSeconds); break;
                     case "ChartRenderAudioSyncOffsetMs": settings.ChartRenderAudioSyncOffsetMs = GetFloat(change.Value, settings.ChartRenderAudioSyncOffsetMs); break;
                     case "ChartRenderShowHitJudgments": settings.ChartRenderShowHitJudgments = GetBool(change.Value, settings.ChartRenderShowHitJudgments); break;
+                    case "ChartRenderCompatKeyViewers": settings.ChartRenderCompatKeyViewers = GetBool(change.Value, settings.ChartRenderCompatKeyViewers); break;
                     case "ChartRenderUseSelectedRange": settings.ChartRenderUseSelectedRange = GetBool(change.Value, settings.ChartRenderUseSelectedRange); break;
                     case "ChartRenderCustomMuxArgs": settings.ChartRenderCustomMuxArgs = GetString(change.Value, settings.ChartRenderCustomMuxArgs); break;
                     case "FfmpegCustomPath": settings.FfmpegCustomPath = GetString(change.Value, settings.FfmpegCustomPath); break;

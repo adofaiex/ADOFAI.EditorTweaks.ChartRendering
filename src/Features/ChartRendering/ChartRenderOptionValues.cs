@@ -18,6 +18,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         public const string CaptureSourceCamera = "camera";
         public const string CaptureSourceGameView = "game-view";
 
+        // Game-view capture backends: offscreen renders UI/world into a RenderTexture at any output
+        // resolution; screen captures the final game backbuffer and follows the window resolution.
+        public const string GameViewBackendOffscreen = "offscreen";
+        public const string GameViewBackendScreen = "screen";
+
         public const string VideoFormatMp4 = "mp4";
         public const string VideoFormatMkv = "mkv";
         public const string VideoFormatMov = "mov";
@@ -133,6 +138,12 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             CaptureSourceGameView
         };
 
+        public static readonly string[] GameViewBackends =
+        {
+            GameViewBackendOffscreen,
+            GameViewBackendScreen
+        };
+
         public static readonly string[] AudioFormats =
         {
             AudioFormatAac,
@@ -194,6 +205,13 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             return (value ?? string.Empty).Trim().ToLowerInvariant() == CaptureSourceGameView
                 ? CaptureSourceGameView
                 : CaptureSourceCamera;
+        }
+
+        public static string NormalizeGameViewBackend(string? value)
+        {
+            return (value ?? string.Empty).Trim().ToLowerInvariant() == GameViewBackendScreen
+                ? GameViewBackendScreen
+                : GameViewBackendOffscreen;
         }
 
         public static string NormalizePreviewMode(string? value)

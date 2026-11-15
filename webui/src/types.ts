@@ -31,12 +31,14 @@ export interface SettingsState {
   ChartRenderEncoderMode: string;
   ChartRenderCaptureFormat: string;
   ChartRenderCaptureSource: string;
+  ChartRenderGameViewBackend: string;
   ChartRenderPreviewMode: string;
   ChartRenderAudioFormat: string;
   ChartRenderVideoFormat: string;
   ChartRenderCompletionTailSeconds: number;
   ChartRenderAudioSyncOffsetMs: number;
   ChartRenderShowHitJudgments: boolean;
+  ChartRenderCompatKeyViewers: boolean;
   ChartRenderUseSelectedRange: boolean;
   ChartRenderCustomMuxArgs: string;
   ChartRenderVideoCodec: string;
