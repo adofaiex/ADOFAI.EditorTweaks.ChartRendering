@@ -345,6 +345,58 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 + ", scale=" + state.ScaleFactor.ToString("0.###") + "->" + canvas.scaleFactor.ToString("0.###") + ").");
         }
 
+        // Temporarily puts a tracked canvas back into the mode it had before the offscreen takeover,
+        // runs the action, then takes it over again. Some third-party UI builds objects lazily, and an
+        // object first created while its canvas is in ScreenSpaceCamera mode can stay invisible for the
+        // rest of the session (Jipper's rain bars are the known case), so those objects must be created
+        // while the canvas is still Overlay.
+        public bool TryRunWithCanvasRestored(Canvas? canvas, Action? action)
+        {
+            if (canvas == null || action == null || disposed)
+            {
+                return false;
+            }
+
+            Canvas root = canvas.rootCanvas == null ? canvas : canvas.rootCanvas;
+            if (!trackedCanvases.TryGetValue(root, out CanvasState state))
+            {
+                return false;
+            }
+
+            try
+            {
+                root.renderMode = state.RenderMode;
+                root.worldCamera = state.WorldCamera;
+                root.planeDistance = state.PlaneDistance;
+                root.scaleFactor = state.ScaleFactor;
+                root.referencePixelsPerUnit = state.ReferencePixelsPerUnit;
+                if (state.Scaler != null)
+                {
+                    state.Scaler.enabled = true;
+                }
+
+                action();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                ChartRenderDiagnostics.Log("Temporary canvas restore failed for " + root.gameObject.name + ": " + ex.Message);
+                return false;
+            }
+            finally
+            {
+                trackedCanvases.Remove(root);
+                try
+                {
+                    Track(root);
+                }
+                catch (Exception ex)
+                {
+                    ChartRenderDiagnostics.Log("Canvas re-take failed for " + root.gameObject.name + ": " + ex.Message);
+                }
+            }
+        }
+
         private void RestoreAll()
         {
             foreach (KeyValuePair<Canvas, CanvasState> pair in trackedCanvases)
