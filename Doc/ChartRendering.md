@@ -221,6 +221,7 @@ Patch 点：
 - 只 transpile `RainManager.Update` 和 `KeyViewerUpdater.Update` 里的 `CurrentTicks` 读取，并在 `Work` 消费按下/松开时间戳时换成同一个渲染时钟。
 - 同一输出帧内完成的按下/松开不能都直接取帧时间，否则 `RawRain.FinalSizeY=0`，雨段会永久不可见。适配器记录原始按下时间，同帧松开时保留原始按压时长并限制在一帧以内；原始边沿时间完全相同时给一个输出帧，确保快速点击至少可见一次。跨帧事件仍按视频帧计时。
 - 不 Patch `ToStopwatchTicks`，避免输入线程的 `_eventOffsetTicks` 混入视频时间；不全局 Patch `Stopwatch`，也不伪造键盘输入。
+- JRP 由 JALib 异步启用，可能在渲染中途才出现。离屏渲染期间每 30 帧检查一次 JRP 的雨条池，发现没准备过的池（晚加载，或 JRP 重建了按键）就临时把画布切回 Overlay，销毁池里的雨条并重新预创建（日志 `JRP_LATE_PREWARM`）。当时还在屏幕上的雨条之后会回到池里，而池是后进先出，会被优先复用，所以 5 秒和 15 秒后对同一批池再重建一次（`JRP_LATE_REPURGE`）。只在 JRP 程序集里查找类型，没装 JRP 时几乎没有开销。
 - 渲染结束时不能直接跳回真实 `Stopwatch`：视频时长和实际渲染耗时不同，会让已有雨段/KPS 时间戳突然倒退或前进。当前实现记录连续交接点，渲染后从该点按真实时间速度继续；正常输入事件只加固定偏移，保留原来的相对时间。下一次渲染也从同一连续时间轴开始。
 - 同时支持 `long` 和 `ulong` 版本的 `CurrentTicks`。适配器失败会整体回滚并继续普通渲染，停用 Mod 时会移除兼容补丁。
 - `ChartRenderCompatKeyViewers` 默认开启，可在设置页关闭。摄像机模式不包含 KeyViewer 画布，因此不会启用此适配器。
@@ -240,7 +241,9 @@ Patch 点：
 - 适配器渲染开始时调用 `SetExternal(视频秒数)`，结束时调用 `ClearExternal()`，不使用 Harmony。
 - 不调用公开的 `KvExternalDriver.Begin`：它会同时屏蔽真实按键、改用驱动注入的按键，而 AETC 拿不到按键码。按键仍按 Quartz 原来的方式进入。
 - 如果有其他回放渲染器正在使用 `KvExternalDriver`，适配器不接管，也不在结束时清掉别人的时钟。
-- Quartz 的模块是异步加载的；渲染开始时没找到，会每 300 帧重试一次。
+- Quartz 的模块是异步加载的；渲染开始时没找到，会每 60 帧重试一次。只在名字以 `Quartz` 开头的程序集里找，不用 `AccessTools.TypeByName`（找不到时会扫描所有程序集的所有类型，太慢）。
+- Quartz 在游戏窗口失去焦点时会丢弃按下事件（`KvInputQueue.Push`）。从网页开始渲染、或渲染时切换窗口都会让游戏失去焦点，所以接管时钟期间用一个前缀补丁让公开的 `KvInputQueue.SetFocused` 始终收到 `true`；补丁失败时只记日志，时钟照常。
+- 如果上一次渲染没走到 `End` 仍持有时钟，下次 `Begin` 会先释放再重新接管，避免 Quartz 时间倒退。
 
 ## 自动打击与防球抽搐
 

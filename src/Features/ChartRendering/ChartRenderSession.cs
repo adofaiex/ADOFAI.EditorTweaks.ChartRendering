@@ -172,6 +172,23 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 yield break;
             }
 
+            // Offline audio capture advances in whole DSP buffers. When one video frame is shorter than
+            // one buffer (48 kHz / 256 samples: above ~187 FPS) AudioRenderer returns no samples and the
+            // render used to stop after 5 seconds of silence. Fail up front with the real reason.
+            int maxAudioFps = GetMaxAudioCaptureFps();
+            if (maxAudioFps > 0 && settings.ChartRenderFps > maxAudioFps)
+            {
+                result.Success = false;
+                result.ErrorCode = ChartRenderErrorCode.InitializationFailed;
+                result.Message = "Frame rate " + settings.ChartRenderFps + " FPS is too high for audio capture (maximum "
+                    + maxAudioFps + " FPS at " + AudioSettings.outputSampleRate + " Hz with a "
+                    + AudioSettings.GetConfiguration().dspBufferSize + "-sample audio buffer). / 帧率过高，音频无法捕获，最高 "
+                    + maxAudioFps + " 帧/秒。";
+                Cleanup(frameCapture, encoder, restoreEditor: true, deleteTemp: true);
+                Finish(onComplete, result);
+                yield break;
+            }
+
             yield return null;
 
             // A DSP buffer switch reloads the level song asynchronously; playback must not start on the
@@ -851,6 +868,22 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private bool HasReachedLevelEnd()
         {
             return renderRange.HasReachedEnd();
+        }
+
+        // Highest frame rate at which every video frame still covers at least one DSP buffer, or 0 when
+        // the audio configuration cannot be read.
+        private static int GetMaxAudioCaptureFps()
+        {
+            try
+            {
+                int sampleRate = AudioSettings.outputSampleRate;
+                int buffer = AudioSettings.GetConfiguration().dspBufferSize;
+                return sampleRate > 0 && buffer > 0 ? sampleRate / buffer : 0;
+            }
+            catch
+            {
+                return 0;
+            }
         }
 
         private double GetFrameTime(int index)

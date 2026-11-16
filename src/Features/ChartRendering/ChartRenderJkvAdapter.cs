@@ -107,7 +107,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 videoSeconds = Math.Max(0, frameIndex) * frameSeconds;
 
                 // JKV may finish loading after the render started.
-                if (!ready && frameIndex > 0 && frameIndex % 300 == 0)
+                if (!ready && frameIndex > 0 && frameIndex % 60 == 0)
                 {
                     TryApply(logMissing: false);
                     if (ready)
@@ -123,30 +123,41 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         {
             lock (Sync)
             {
-                if (active)
+                try
                 {
-                    UnscaledClock.EndRender(Time.unscaledTimeAsDouble, videoSeconds);
-                    double videoTicks = videoSeconds * TimeSpan.TicksPerSecond;
-                    for (int i = StopwatchClocks.Count - 1; i >= 0; i--)
+                    if (active)
                     {
-                        if (StopwatchClocks[i].Stopwatch.Target is Stopwatch stopwatch)
-                        {
-                            StopwatchClocks[i].Clock.EndRender(stopwatch.Elapsed.Ticks, videoTicks);
-                        }
-                        else
-                        {
-                            StopwatchClocks.RemoveAt(i);
-                        }
+                        EndClocksLocked();
                     }
-
-                    ChartRenderDiagnostics.Log("JKV render clock ended. videoSeconds=" + videoSeconds.ToString("0.###")
-                        + " timeReads=" + timeReads + " stopwatchReads=" + stopwatchReads
-                        + " stopwatches=" + StopwatchClocks.Count + " handoff=continuous.");
                 }
-
-                active = false;
-                discovery = false;
+                finally
+                {
+                    // Even if a read fails, never leave JKV frozen on the video timeline.
+                    active = false;
+                    discovery = false;
+                }
             }
+        }
+
+        private static void EndClocksLocked()
+        {
+            UnscaledClock.EndRender(Time.unscaledTimeAsDouble, videoSeconds);
+            double videoTicks = videoSeconds * TimeSpan.TicksPerSecond;
+            for (int i = StopwatchClocks.Count - 1; i >= 0; i--)
+            {
+                if (StopwatchClocks[i].Stopwatch.Target is Stopwatch stopwatch)
+                {
+                    StopwatchClocks[i].Clock.EndRender(stopwatch.Elapsed.Ticks, videoTicks);
+                }
+                else
+                {
+                    StopwatchClocks.RemoveAt(i);
+                }
+            }
+
+            ChartRenderDiagnostics.Log("JKV render clock ended. videoSeconds=" + videoSeconds.ToString("0.###")
+                + " timeReads=" + timeReads + " stopwatchReads=" + stopwatchReads
+                + " stopwatches=" + StopwatchClocks.Count + " handoff=continuous.");
         }
 
         public static void Shutdown()

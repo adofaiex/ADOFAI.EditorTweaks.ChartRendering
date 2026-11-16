@@ -58,109 +58,217 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private static Func<long>? jipperTicksLong;
         private static Func<ulong>? jipperTicksUlong;
 
+        private const string JipperAssemblyName = "JipperResourcePack";
+        private const string JipperKeyViewerTypeName = "JipperResourcePack.KeyViewerContents.KeyViewer";
+        // How often an offscreen render looks for JRP rain pools it has not prepared yet. JRP is
+        // enabled asynchronously by JALib and may appear in the middle of a render.
+        private const int JipperPoolCheckFrames = 30;
+        private static readonly HashSet<object> PreparedJipperPools = new HashSet<object>();
+        private static readonly HashSet<object> RepurgeJipperPools = new HashSet<object>();
+        private static int jipperRepurgesLeft;
+        private static int nextJipperRepurgeFrame;
+        private static int renderFps = 60;
+
         // Jipper creates Rain UI objects lazily on the first key press. If that first creation happens
         // after the canvas has been switched to ScreenSpaceCamera for offscreen capture, the pooled
         // RawImage objects can remain invisible for the rest of the session. Create a small pool while
         // the canvas is still using its normal Overlay mode, before ChartOffscreenGameViewCapture runs.
         //
-        // A late-load (Jipper is first initialised in the middle of an offscreen render) needs the same
-        // treatment afterwards: the pooled objects it created while the canvas was already in camera
-        // mode are invisible, so they are destroyed and replaced while the canvas is temporarily put
-        // back into Overlay mode.
+        // Pools that appear later (JRP finished loading mid-render, or rebuilt its keys) are found by
+        // Tick, and their rains are destroyed and recreated while the canvas is temporarily put back
+        // into Overlay mode. Rains that were already on screen at that moment go back to the pool
+        // later and would be reused first (the pool is a stack), so the same pools are rebuilt again
+        // 5 and 15 seconds later.
         public static void PrewarmJipperRainBeforeOffscreen()
         {
-            PrewarmJipperRain(purgePooled: false, tag: "JRP_PREWARM");
+            lock (Sync)
+            {
+                PreparedJipperPools.Clear();
+                RepurgeJipperPools.Clear();
+                jipperRepurgesLeft = 0;
+                if (Main.Settings != null && !Main.Settings.ChartRenderCompatKeyViewers)
+                {
+                    return;
+                }
+
+                List<object>? pools = GetJipperPools();
+                if (pools == null)
+                {
+                    // Not loaded yet; Tick prepares the pools once they appear.
+                    return;
+                }
+
+                PrepareJipperPools(pools, purgePooled: false, tag: "JRP_PREWARM");
+            }
         }
 
         public static void SetOffscreenCapture(ChartOffscreenGameViewCapture? capture)
         {
-            offscreenCapture = capture;
+            lock (Sync)
+            {
+                offscreenCapture = capture;
+            }
         }
 
-        private static void PrewarmJipperRain(bool purgePooled, string tag)
+        private static Type? FindJipperKeyViewerType()
         {
-            if (Main.Settings != null && !Main.Settings.ChartRenderCompatKeyViewers)
+            // Looks only inside the JRP assembly. AccessTools.TypeByName scans every type of every
+            // assembly when the type is missing, which is too slow to repeat during a render.
+            foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
-                return;
+                if (string.Equals(assembly.GetName().Name, JipperAssemblyName, StringComparison.Ordinal))
+                {
+                    return assembly.GetType(JipperKeyViewerTypeName, false);
+                }
             }
 
+            return null;
+        }
+
+        // The distinct RainPool objects of the current JRP key viewer, or null while JRP has no key
+        // viewer yet. Several keys can share one pool.
+        private static List<object>? GetJipperPools()
+        {
+            Type? keyViewer = FindJipperKeyViewerType();
+            if (keyViewer == null)
+            {
+                return null;
+            }
+
+            object? instance = AccessTools.Field(keyViewer, "Instance")?.GetValue(null);
+            if (instance == null || !(AccessTools.Field(keyViewer, "Keys")?.GetValue(instance) is Array keys))
+            {
+                return null;
+            }
+
+            List<object> pools = new List<object>();
+            HashSet<object> seen = new HashSet<object>();
+            foreach (object? key in keys)
+            {
+                object? pool = key == null ? null : AccessTools.Field(key.GetType(), "RainPool")?.GetValue(key);
+                if (pool != null && seen.Add(pool))
+                {
+                    pools.Add(pool);
+                }
+            }
+
+            return pools;
+        }
+
+        // Called from Tick under Sync during offscreen renders.
+        private static void CheckJipperPoolsLocked()
+        {
+            if (lastFrameIndex % JipperPoolCheckFrames == 0)
+            {
+                List<object>? pools = GetJipperPools();
+                if (pools != null)
+                {
+                    List<object> fresh = new List<object>();
+                    foreach (object pool in pools)
+                    {
+                        if (!PreparedJipperPools.Contains(pool))
+                        {
+                            fresh.Add(pool);
+                        }
+                    }
+
+                    if (fresh.Count > 0)
+                    {
+                        ChartRenderDiagnostics.Log("JRP rain pools appeared during an offscreen render at frame " + lastFrameIndex
+                            + " (" + fresh.Count + " new); rebuilding them under Overlay mode.");
+                        PrepareJipperPools(fresh, purgePooled: true, tag: "JRP_LATE_PREWARM");
+                        foreach (object pool in fresh)
+                        {
+                            RepurgeJipperPools.Add(pool);
+                        }
+
+                        jipperRepurgesLeft = 2;
+                        nextJipperRepurgeFrame = lastFrameIndex + renderFps * 5;
+                    }
+                }
+            }
+
+            if (jipperRepurgesLeft > 0 && lastFrameIndex >= nextJipperRepurgeFrame)
+            {
+                List<object>? pools = GetJipperPools();
+                List<object> again = new List<object>();
+                if (pools != null)
+                {
+                    foreach (object pool in pools)
+                    {
+                        if (RepurgeJipperPools.Contains(pool))
+                        {
+                            again.Add(pool);
+                        }
+                    }
+                }
+
+                if (again.Count > 0)
+                {
+                    PrepareJipperPools(again, purgePooled: true, tag: "JRP_LATE_REPURGE");
+                }
+
+                jipperRepurgesLeft--;
+                nextJipperRepurgeFrame = lastFrameIndex + renderFps * 10;
+            }
+        }
+
+        private static void PrepareJipperPools(List<object> pools, bool purgePooled, string tag)
+        {
             try
             {
-                Type? keyViewer = AccessTools.TypeByName("JipperResourcePack.KeyViewerContents.KeyViewer");
-                if (keyViewer == null)
-                {
-                    if (purgePooled)
-                    {
-                        ChartRenderDiagnostics.Log(tag + " skipped: Jipper KeyViewer is not loaded.");
-                    }
-
-                    return;
-                }
-
-                object? instance = AccessTools.Field(keyViewer, "Instance")?.GetValue(null);
-                if (instance == null || !(AccessTools.Field(keyViewer, "Keys")?.GetValue(instance) is Array keys))
-                {
-                    return;
-                }
-
-                HashSet<object> pools = new HashSet<object>();
-                int normalCreated = 0;
-                int ghostCreated = 0;
                 int pooledDestroyed = 0;
                 int restoredCanvases = 0;
-                foreach (object? key in keys)
+
+                // Group by root canvas so each canvas is switched back to Overlay only once.
+                Dictionary<Canvas, List<object>> byCanvas = new Dictionary<Canvas, List<object>>();
+                List<object> withoutCanvas = new List<object>();
+                foreach (object pool in pools)
                 {
-                    if (key == null)
-                    {
-                        continue;
-                    }
-
-                    object? pool = AccessTools.Field(key.GetType(), "RainPool")?.GetValue(key);
-                    if (pool == null || !pools.Add(pool))
-                    {
-                        continue;
-                    }
-
-                    MethodInfo? getRain = AccessTools.Method(pool.GetType(), "GetOrNewRain", new[] { typeof(bool) });
-                    MethodInfo? addPool = AccessTools.Method(pool.GetType(), "AddPool");
-                    if (getRain == null || addPool == null)
-                    {
-                        continue;
-                    }
-
+                    PreparedJipperPools.Add(pool);
                     if (purgePooled)
                     {
                         pooledDestroyed += PurgePooledJipperRain(pool);
                     }
 
-                    int[] counts = { 0, 0 };
-                    Action create = () => CreateJipperRainBatch(pool, getRain, addPool, counts);
-                    bool restored = false;
-                    if (offscreenCapture != null)
+                    RectTransform? poolTransform = AccessTools.Field(pool.GetType(), "Transform")?.GetValue(pool) as RectTransform;
+                    Canvas? canvas = poolTransform == null ? null : poolTransform.GetComponentInParent<Canvas>();
+                    Canvas? root = canvas == null ? null : canvas.rootCanvas;
+                    if (offscreenCapture == null || root == null)
                     {
-                        RectTransform? poolTransform = AccessTools.Field(pool.GetType(), "Transform")?.GetValue(pool) as RectTransform;
-                        Canvas? canvas = poolTransform == null ? null : poolTransform.GetComponentInParent<Canvas>();
-                        if (canvas != null)
-                        {
-                            restored = offscreenCapture.TryRunWithCanvasRestored(canvas.rootCanvas, create);
-                        }
+                        withoutCanvas.Add(pool);
+                        continue;
                     }
 
-                    if (!restored)
+                    if (!byCanvas.TryGetValue(root, out List<object> group))
                     {
-                        create();
+                        group = new List<object>();
+                        byCanvas.Add(root, group);
                     }
-                    else
+
+                    group.Add(pool);
+                }
+
+                int[] counts = { 0, 0 };
+                foreach (KeyValuePair<Canvas, List<object>> pair in byCanvas)
+                {
+                    List<object> group = pair.Value;
+                    if (offscreenCapture != null
+                        && offscreenCapture.TryRunWithCanvasRestored(pair.Key, () => CreateJipperRainBatches(group, counts)))
                     {
                         restoredCanvases++;
                     }
-
-                    normalCreated += counts[0];
-                    ghostCreated += counts[1];
+                    else
+                    {
+                        // Not a tracked canvas (or the restore failed): create as-is.
+                        withoutCanvas.AddRange(group);
+                    }
                 }
 
+                CreateJipperRainBatches(withoutCanvas, counts);
+
                 ChartRenderDiagnostics.Log(tag + " pools=" + pools.Count
-                    + " normal=" + normalCreated + " ghost=" + ghostCreated
+                    + " normal=" + counts[0] + " ghost=" + counts[1]
                     + (purgePooled ? " purged=" + pooledDestroyed : string.Empty)
                     + (restoredCanvases > 0 ? " restoredCanvases=" + restoredCanvases : string.Empty)
                     + ".");
@@ -168,6 +276,19 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             catch (Exception exception)
             {
                 ChartRenderDiagnostics.Log(tag + " failed: " + exception.Message);
+            }
+        }
+
+        private static void CreateJipperRainBatches(List<object> pools, int[] counts)
+        {
+            foreach (object pool in pools)
+            {
+                MethodInfo? getRain = AccessTools.Method(pool.GetType(), "GetOrNewRain", new[] { typeof(bool) });
+                MethodInfo? addPool = AccessTools.Method(pool.GetType(), "AddPool");
+                if (getRain != null && addPool != null)
+                {
+                    CreateJipperRainBatch(pool, getRain, addPool, counts);
+                }
             }
         }
 
@@ -258,6 +379,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 baselineSet = false;
                 virtualTicks = 0.0;
                 frameTicks = TickRate / Math.Max(1, fps);
+                renderFps = Math.Max(1, fps);
                 lastFrameIndex = 0;
                 clockReads = 0;
                 inputEvents = 0;
@@ -296,8 +418,10 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 lastFrameIndex = Math.Max(0, frameIndex);
                 virtualTicks = lastFrameIndex * frameTicks;
 
-                // Jipper/JALib loads asynchronously and may finish after rendering has begun.
-                if (!adapterReady && discoveryEnabled && (lastFrameIndex == 0 || lastFrameIndex % 300 == 0))
+                // Jipper/JALib loads asynchronously and may finish after rendering has begun. Only try
+                // once its assembly is present, so renders without JRP pay nothing.
+                if (!adapterReady && discoveryEnabled && lastFrameIndex % JipperPoolCheckFrames == 0
+                    && FindJipperKeyViewerType() != null)
                 {
                     ApplyJipperKeyViewerAdapter();
                     if (adapterReady)
@@ -306,14 +430,12 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                         baselineSet = false;
                         ChartRenderDiagnostics.Log("Jipper KeyViewer compatibility adapter late-loaded at frame "
                             + lastFrameIndex + ".");
-                        if (offscreenCapture != null)
-                        {
-                            // Its first rain objects were created while the canvas was already in offscreen
-                            // camera mode, so they can stay invisible. Replace them under Overlay mode.
-                            ChartRenderDiagnostics.Log("Jipper KeyViewer loaded during an offscreen render; rebuilding its rain pool.");
-                            PrewarmJipperRain(purgePooled: true, tag: "JRP_LATE_PREWARM");
-                        }
                     }
+                }
+
+                if (discoveryEnabled && offscreenCapture != null)
+                {
+                    CheckJipperPoolsLocked();
                 }
             }
         }
@@ -344,6 +466,10 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 baselineSet = false;
                 virtualTicks = 0.0;
                 JipperPresses.Clear();
+                // The capture is disposed after the render; do not keep it (or its pools) around.
+                offscreenCapture = null;
+                RepurgeJipperPools.Clear();
+                jipperRepurgesLeft = 0;
             }
         }
 
@@ -360,6 +486,10 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 realtimeOriginRealTicks = 0.0;
                 realtimeOriginMappedTicks = 0.0;
                 JipperPresses.Clear();
+                offscreenCapture = null;
+                PreparedJipperPools.Clear();
+                RepurgeJipperPools.Clear();
+                jipperRepurgesLeft = 0;
                 textureFixes = 0;
                 textureFixLogged = false;
                 Harmony? oldHarmony = harmony;
