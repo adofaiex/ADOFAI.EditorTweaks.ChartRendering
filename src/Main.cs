@@ -62,6 +62,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering
                 ChartRenderQuitGuard.Uninstall();
                 WebUiHost.Destroy();
                 ChartRenderService.Destroy();
+                ChartRenderCompatibility.Shutdown();
                 PatchManager.UnpatchAll();
             }
 

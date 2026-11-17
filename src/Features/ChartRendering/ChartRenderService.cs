@@ -523,6 +523,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 ChartRenderCaptureSource = request.CaptureSource == ChartRenderCaptureSource.GameView
                     ? ChartRenderOptionValues.CaptureSourceGameView
                     : ChartRenderOptionValues.CaptureSourceCamera,
+                // A user preference shared by Web UI and API callers, like the key-viewer clock switch.
+                ChartRenderGameViewBackend = ChartRenderOptionValues.NormalizeGameViewBackend(
+                    Main.Settings == null ? null : Main.Settings.ChartRenderGameViewBackend),
                 ChartRenderPreviewMode = ToInternal(request.PreviewMode),
                 ChartRenderAudioFormat = ToInternal(request.AudioFormat),
                 ChartRenderVideoFormat = ToInternal(request.VideoFormat),

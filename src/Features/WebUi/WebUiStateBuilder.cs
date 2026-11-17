@@ -95,6 +95,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 ["ChartRenderDetailedEncoderSettings"] = settings.ChartRenderDetailedEncoderSettings,
                 ["ChartRenderCaptureFormat"] = settings.ChartRenderCaptureFormat ?? string.Empty,
                 ["ChartRenderCaptureSource"] = settings.ChartRenderCaptureSource ?? string.Empty,
+                ["ChartRenderGameViewBackend"] = settings.ChartRenderGameViewBackend ?? string.Empty,
                 ["ChartRenderPreviewMode"] = settings.ChartRenderPreviewMode ?? string.Empty,
                 ["ChartRenderAudioFormat"] = settings.ChartRenderAudioFormat ?? string.Empty,
                 ["ChartRenderVideoFormat"] = settings.ChartRenderVideoFormat ?? string.Empty,
@@ -102,6 +103,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 ["ChartRenderCompletionTailSeconds"] = settings.ChartRenderCompletionTailSeconds,
                 ["ChartRenderAudioSyncOffsetMs"] = settings.ChartRenderAudioSyncOffsetMs,
                 ["ChartRenderShowHitJudgments"] = settings.ChartRenderShowHitJudgments,
+                ["ChartRenderCompatKeyViewers"] = settings.ChartRenderCompatKeyViewers,
                 ["ChartRenderUseSelectedRange"] = settings.ChartRenderUseSelectedRange,
                 ["ChartRenderCustomMuxArgs"] = settings.ChartRenderCustomMuxArgs ?? string.Empty,
                 ["FfmpegCustomPath"] = settings.FfmpegCustomPath ?? string.Empty

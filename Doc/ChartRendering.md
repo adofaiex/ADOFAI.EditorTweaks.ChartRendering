@@ -29,6 +29,10 @@
 | `ChartUnityAudioCapture.cs` | 使用 Unity `AudioRenderer` 离线捕获音频并写成 float32 WAV。 |
 | `FfmpegEncoder.cs` | FFmpeg rawvideo pipe、GPU/CPU 编码选择、视频完成、音频 mux。 |
 | `ChartRenderVisualClock.cs` | 强制视觉时间轴，Patch conductor 的 `songposition_minusi` 读写。 |
+| `ChartRenderCompatibility.cs` | 可选的第三方按键显示渲染时钟适配；处理 JRP，并驱动 JKV、Quartz 适配器。 |
+| `ChartRenderJkvAdapter.cs` | JipperKeyViewer 的时钟适配。 |
+| `ChartRenderQuartzAdapter.cs` | Quartz 按键显示的时钟适配。 |
+| `ChartRenderContinuousClock.cs` | 把一个真实时钟映射到渲染时间轴，并在渲染结束时连续交接。 |
 | `ChartRenderAutoPlayer.cs` | 渲染期间自动补打砖块，并 suppress 异步输入角度修正。 |
 | `ChartRenderAudioPatches.cs` | 屏蔽界面音效进入成品音频。 |
 | `ChartRenderJudgmentPatches.cs` | 根据设置隐藏或显示判定文字。 |
@@ -200,6 +204,46 @@ Patch 点：
 - 玩家输入偏移是为了游玩手感，不应该把离线视频画面再整体挪一个相位。
 - 音频来自 Unity mixer 的离线输出，不需要靠输入偏移修正。
 - 之前视觉起点和音频起点很小相位差就是由这里暴露出来的。
+
+### 游戏画面捕获后端
+
+游戏画面模式有两种捕获后端，可在设置页选择：
+
+- `offscreen`（默认）：`ChartOffscreenGameViewCapture`，按设置分辨率离屏合成世界摄像机和屏幕空间 UI，支持高于窗口的 2K/4K 输出。
+- `screen`：`ChartGameViewFrameCapture`，使用 `ScreenCapture.CaptureScreenshotIntoRenderTexture` 捕获最终屏幕，兼容性更好，但输出分辨率跟随游戏窗口。JRP 雨键等动态叠加层在当前离屏 UI 合成路径中不可见时，可用此后端对照和回退。
+
+### 第三方按键显示的时钟适配
+
+`ChartRenderCompatibility` 是独立于游戏补丁组的可选兼容层，只在游戏画面模式渲染时启用。目前适配 JipperResourcePack KeyViewer：
+
+- Jipper 的雨键和 KPS 使用 `Stopwatch`，离线渲染时会按真实时间而不是视频时间移动。
+- 渲染时钟直接取 `requestedFrameIndex / ChartRenderFps`，不依赖实际编码耗时，也不重复累计 `Time.captureDeltaTime`。
+- 只 transpile `RainManager.Update` 和 `KeyViewerUpdater.Update` 里的 `CurrentTicks` 读取，并在 `Work` 消费按下/松开时间戳时换成同一个渲染时钟。
+- 同一输出帧内完成的按下/松开不能都直接取帧时间，否则 `RawRain.FinalSizeY=0`，雨段会永久不可见。适配器记录原始按下时间，同帧松开时保留原始按压时长并限制在一帧以内；原始边沿时间完全相同时给一个输出帧，确保快速点击至少可见一次。跨帧事件仍按视频帧计时。
+- 不 Patch `ToStopwatchTicks`，避免输入线程的 `_eventOffsetTicks` 混入视频时间；不全局 Patch `Stopwatch`，也不伪造键盘输入。
+- JRP 由 JALib 异步启用，可能在渲染中途才出现。离屏渲染期间每 30 帧检查一次 JRP 的雨条池，发现没准备过的池（晚加载，或 JRP 重建了按键）就临时把画布切回 Overlay，销毁池里的雨条并重新预创建（日志 `JRP_LATE_PREWARM`）。当时还在屏幕上的雨条之后会回到池里，而池是后进先出，会被优先复用，所以 5 秒和 15 秒后对同一批池再重建一次（`JRP_LATE_REPURGE`）。只在 JRP 程序集里查找类型，没装 JRP 时几乎没有开销。
+- 渲染结束时不能直接跳回真实 `Stopwatch`：视频时长和实际渲染耗时不同，会让已有雨段/KPS 时间戳突然倒退或前进。当前实现记录连续交接点，渲染后从该点按真实时间速度继续；正常输入事件只加固定偏移，保留原来的相对时间。下一次渲染也从同一连续时间轴开始。
+- 同时支持 `long` 和 `ulong` 版本的 `CurrentTicks`。适配器失败会整体回滚并继续普通渲染，停用 Mod 时会移除兼容补丁。
+- `ChartRenderCompatKeyViewers` 默认开启，可在设置页关闭。摄像机模式不包含 KeyViewer 画布，因此不会启用此适配器。
+
+其他按键显示 Mod 不应直接复用 Jipper 的私有方法补丁；应根据它实际使用的时间源和输入路径添加独立的小适配器。三个适配器各自失败、各自回滚，互不影响，也不影响渲染本身。
+
+#### JipperKeyViewer（JKV）
+
+- JKV 的雨键、按键缩放、计数器弹跳和 KPS 使用 `Time.unscaledTime`、`Time.unscaledDeltaTime` 和 `Stopwatch`。按键输入由 JKV 自己的回放垫片（`KeySource`）提供，Creplay 会驱动它，所以只需要适配时钟，不处理输入。
+- 1.7.2 和 master 的调用点不同，所以不按方法名写死：扫描 JKV 程序集里 `JipperKeyViewer.KeyViewer` 命名空间的类型（排除 `.Editor`，包括编译器生成的迭代器类），找出读取上述时钟的方法，只替换这些读取。任一方法补丁失败就整体回滚。
+- `unscaledTime` 和每个 `Stopwatch` 实例各用一个 `ChartRenderContinuousClock`：渲染中按视频时间前进，渲染结束后从结束点按真实速度继续。`unscaledDeltaTime` 渲染中返回 `1 / fps`（渲染时 `Time.captureFramerate = fps`，每个 Unity 帧正好一个视频帧）。
+- 不修改 `Time.realtimeSinceStartup`（JKV 只用它做图片加载节流）。
+
+#### Quartz（UMM 版，v2.1.1 / v3）
+
+- Quartz 按键显示的所有时间（雨键、过渡、计数、图表、JS 面板、输入时间戳）都来自内部的 `KvClock.Now`。Quartz 自带 `KvClock.SetExternal(Func<double>)` / `ClearExternal()`，切换时会自动重新对齐，不会跳变。
+- 适配器渲染开始时调用 `SetExternal(视频秒数)`，结束时调用 `ClearExternal()`，不使用 Harmony。
+- 不调用公开的 `KvExternalDriver.Begin`：它会同时屏蔽真实按键、改用驱动注入的按键，而 AETC 拿不到按键码。按键仍按 Quartz 原来的方式进入。
+- 如果有其他回放渲染器正在使用 `KvExternalDriver`，适配器不接管，也不在结束时清掉别人的时钟。
+- Quartz 的模块是异步加载的；渲染开始时没找到，会每 60 帧重试一次。只在名字以 `Quartz` 开头的程序集里找，不用 `AccessTools.TypeByName`（找不到时会扫描所有程序集的所有类型，太慢）。
+- Quartz 在游戏窗口失去焦点时会丢弃按下事件（`KvInputQueue.Push`）。从网页开始渲染、或渲染时切换窗口都会让游戏失去焦点，所以接管时钟期间用一个前缀补丁让公开的 `KvInputQueue.SetFocused` 始终收到 `true`；补丁失败时只记日志，时钟照常。
+- 如果上一次渲染没走到 `End` 仍持有时钟，下次 `Begin` 会先释放再重新接管，避免 Quartz 时间倒退。
 
 ## 自动打击与防球抽搐
 

@@ -39,6 +39,15 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         // size, or an offscreen setup that fails, falls back to capturing the screen as before.
         private static IChartFrameCapture CreateGameView(Settings settings)
         {
+            ChartRenderCompatibility.SetOffscreenCapture(null);
+            if (ChartRenderOptionValues.NormalizeGameViewBackend(settings.ChartRenderGameViewBackend)
+                == ChartRenderOptionValues.GameViewBackendScreen)
+            {
+                ChartRenderDiagnostics.Log("Game view backend=screen; output follows the game window.");
+                return new ChartGameViewFrameCapture(settings.ChartRenderCaptureFormat);
+            }
+
+            ChartRenderCompatibility.PrewarmJipperRainBeforeOffscreen();
             int width = settings.ChartRenderWidth;
             int height = settings.ChartRenderHeight;
             bool usableSize = width >= 16 && width <= 7680 && height >= 16 && height <= 4320
@@ -47,11 +56,13 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             {
                 try
                 {
-                    return new ChartOffscreenGameViewCapture(
+                    var offscreen = new ChartOffscreenGameViewCapture(
                         width,
                         height,
                         settings.ChartRenderCaptureFormat,
                         settings.ChartRenderPreviewMode);
+                    ChartRenderCompatibility.SetOffscreenCapture(offscreen);
+                    return offscreen;
                 }
                 catch (Exception ex)
                 {

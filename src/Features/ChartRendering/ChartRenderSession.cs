@@ -172,6 +172,23 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 yield break;
             }
 
+            // Offline audio capture advances in whole DSP buffers. When one video frame is shorter than
+            // one buffer (48 kHz / 256 samples: above ~187 FPS) AudioRenderer returns no samples and the
+            // render used to stop after 5 seconds of silence. Fail up front with the real reason.
+            int maxAudioFps = GetMaxAudioCaptureFps();
+            if (maxAudioFps > 0 && settings.ChartRenderFps > maxAudioFps)
+            {
+                result.Success = false;
+                result.ErrorCode = ChartRenderErrorCode.InitializationFailed;
+                result.Message = "Frame rate " + settings.ChartRenderFps + " FPS is too high for audio capture (maximum "
+                    + maxAudioFps + " FPS at " + AudioSettings.outputSampleRate + " Hz with a "
+                    + AudioSettings.GetConfiguration().dspBufferSize + "-sample audio buffer). / 帧率过高，音频无法捕获，最高 "
+                    + maxAudioFps + " 帧/秒。";
+                Cleanup(frameCapture, encoder, restoreEditor: true, deleteTemp: true);
+                Finish(onComplete, result);
+                yield break;
+            }
+
             yield return null;
 
             // A DSP buffer switch reloads the level song asynchronously; playback must not start on the
@@ -495,6 +512,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
             audioCapture?.Dispose();
             audioBuffer.Restore();
+            ChartRenderCompatibility.End();
             ChartRenderVisualClock.End();
 
             if (IsCancellationRequested)
@@ -674,6 +692,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             VideoBackgroundSyncPatches.RestoreRenderSettings();
             IsRendering = false;
             ChartRenderCustomFrameRate.End();
+            ChartRenderCompatibility.End();
             ChartRenderVisualClock.End();
             RestoreState();
             ChartRenderDiagnostics.End();
@@ -710,7 +729,10 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 capturedAudioPath = Path.Combine(tempDirectory, "audio.wav");
                 ChartRenderDiagnostics.BeginRender(workspace);
                 renderRange = configuration.Range;
-                WriteLog("Capture source locked for this render: " + captureSource + ".");
+                WriteLog("Capture source locked for this render: " + captureSource + "."
+                    + " backend=" + ChartRenderOptionValues.NormalizeGameViewBackend(settings.ChartRenderGameViewBackend)
+                    + " requested=" + settings.ChartRenderWidth + "x" + settings.ChartRenderHeight
+                    + "@" + settings.ChartRenderFps + "fps.");
 
                 string extension = ChartRenderOptionValues.GetOutputExtension(settings.ChartRenderVideoFormat, settings.ChartRenderVideoCodec);
                 string requestedName = configuration.OutputFileName;
@@ -848,6 +870,22 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             return renderRange.HasReachedEnd();
         }
 
+        // Highest frame rate at which every video frame still covers at least one DSP buffer, or 0 when
+        // the audio configuration cannot be read.
+        private static int GetMaxAudioCaptureFps()
+        {
+            try
+            {
+                int sampleRate = AudioSettings.outputSampleRate;
+                int buffer = AudioSettings.GetConfiguration().dspBufferSize;
+                return sampleRate > 0 && buffer > 0 ? sampleRate / buffer : 0;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
         private double GetFrameTime(int index)
         {
             return index / (double)Math.Max(1, settings.ChartRenderFps);
@@ -862,6 +900,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
 
             ChartRenderVisualClock.SetFrameTime(seconds, GetRenderPitch());
+            ChartRenderCompatibility.Tick(index);
         }
 
         private void BeginForcedVisualClock()
@@ -873,6 +912,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 ? SanitizeBeginningSongPosition(conductor, dspStartSongPosition)
                 : dspStartSongPosition;
             ChartRenderVisualClock.Begin(startSongPosition);
+            ChartRenderCompatibility.Begin(settings.ChartRenderFps, CapturesGameView);
 
             int inputOffsetMs = 0;
             try
@@ -1029,6 +1069,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             audioCapture = null;
             audioBuffer.Restore();
             ChartRenderCustomFrameRate.End();
+            ChartRenderCompatibility.End();
             ChartRenderVisualClock.End();
             ChartRenderDiagnostics.End();
 
