@@ -106,6 +106,7 @@ export interface WebUiState {
 export interface FfmpegState {
   status: "missing" | "downloading" | "verifying" | "installing" | "ready" | "failed";
   version: string;
+  variant: string;
   progress: number;
   downloadedBytes: number;
   totalBytes: number;

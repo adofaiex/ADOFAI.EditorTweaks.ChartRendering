@@ -185,7 +185,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     result.Message = "FFmpeg is required to render but is not installed. "
                         + ChartFfmpegInstaller.Describe()
                         + " / 渲染需要 FFmpeg，但当前不可用：" + ChartFfmpegInstaller.Describe()
-                        + " 请检查网络后重试，或手动把 ffmpeg.exe 放到游戏目录的 ffmpeg 文件夹。";
+                        + " 请检查网络后重试；也可以改用完整版 FFmpeg（下载带 -Full 后缀的安装包），"
+                        + "或手动把 ffmpeg.exe 放到游戏目录的 ffmpeg 文件夹。";
                     Finish(onComplete, result);
                     yield break;
                 }

@@ -13,23 +13,50 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
     // Downloads the FFmpeg build AETC renders with. The mod package itself no longer ships
     // ffmpeg.exe, so a fresh install has to fetch it once (about 88 MB) before the first render.
     //
-    // Two mirrors are tried in order: ADOFAITools (primary, mainland friendly) and the GitHub
-    // release asset (overseas / fallback). Every download is verified against a pinned SHA256
-    // before it is unpacked, so a mirror cannot swap the binary.
+    // Sources are tried in order: the AETC-specific slim build first (13 MB), then the full
+    // gyan.dev build as a fallback (88 MB) in case the slim build is unavailable or a machine
+    // hits a codec problem with it. Each entry pins its own size and SHA256, so a mirror cannot
+    // swap the binary.
     internal static class ChartFfmpegInstaller
     {
-        public const string Version = "9.0.2";
+        public const string Version = "AETC N-129000";
 
-        private const long ExpectedSize = 88_041_022L;
-        private const string ExpectedSha256 = "f33a7aa4d379d301dbe650d12b658b15d049974a32948c462bd24726a350b846";
-        private const string ArchiveFileName = "FFmpeg-9.0.2-full_build-win64.zip";
         private const string EntryNameHint = "ffmpeg.exe";
 
-        private static readonly string[] SourceNames = { "ADOFAITools", "GitHub" };
-        private static readonly string[] SourceUrls =
+        private const long SlimSize = 13_279_311L;
+        private const string SlimSha256 = "90e8f8d2dbaa47fffc2b7118bc1345fec7b36a7046a22269f4a3928083b24558";
+        private const long FullSize = 88_041_022L;
+        private const string FullSha256 = "f33a7aa4d379d301dbe650d12b658b15d049974a32948c462bd24726a350b846";
+
+        private sealed class Source
         {
-            "https://assets.adofaitools.top/files/bf68b99d-e905-4fc8-8dd4-0b050e0e0f41.zip",
-            "https://github.com/adofaiex/ADOFAI.EditorTweaks.ChartRendering/releases/download/ffmpeg-9.0.2/FFmpeg-9.0.2-full_build-win64.zip",
+            public Source(string name, string url, long size, string sha256)
+            {
+                Name = name;
+                Url = url;
+                Size = size;
+                Sha256 = sha256;
+            }
+
+            public string Name { get; }
+            public string Url { get; }
+            public long Size { get; }
+            public string Sha256 { get; }
+        }
+
+        private static readonly Source[] Sources =
+        {
+            // Filled in when the release asset is uploaded; empty entries are skipped.
+            new Source("ADOFAITools 精简版", "", SlimSize, SlimSha256),
+            new Source("GitHub 精简版",
+                "https://github.com/adofaiex/ADOFAI.EditorTweaks.ChartRendering/releases/download/ffmpeg-aetc/FFmpeg-AETC-N-129000-win64.zip",
+                SlimSize, SlimSha256),
+            new Source("ADOFAITools 完整版",
+                "https://assets.adofaitools.top/files/bf68b99d-e905-4fc8-8dd4-0b050e0e0f41.zip",
+                FullSize, FullSha256),
+            new Source("GitHub 完整版",
+                "https://github.com/adofaiex/ADOFAI.EditorTweaks.ChartRendering/releases/download/ffmpeg-9.0.2/FFmpeg-9.0.2-full_build-win64.zip",
+                FullSize, FullSha256),
         };
 
         private static readonly object Sync = new object();
@@ -38,8 +65,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private static string state = "missing";
         private static string message = string.Empty;
         private static string sourceName = string.Empty;
+        private static string installedVariant = string.Empty;
         private static long downloadedBytes;
-        private static long totalBytes = ExpectedSize;
+        private static long totalBytes = SlimSize;
         private static int sourceIndex;
 
         public static string TargetPath
@@ -100,8 +128,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 state = "downloading";
                 message = string.Empty;
                 downloadedBytes = 0;
-                totalBytes = ExpectedSize;
+                totalBytes = SlimSize;
                 sourceName = string.Empty;
+                installedVariant = string.Empty;
                 sourceIndex = 0;
                 worker = new Thread(() => DownloadLoop(reason))
                 {
@@ -142,14 +171,15 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 return new Dictionary<string, object>
                 {
                     ["status"] = ready ? "ready" : state,
-                    ["version"] = Version,
+                    ["version"] = ready && installedVariant.Length > 0 ? installedVariant : Version,
+                    ["variant"] = installedVariant,
                     ["progress"] = ready ? 1f : Progress,
                     ["downloadedBytes"] = downloadedBytes,
                     ["totalBytes"] = totalBytes,
                     ["source"] = sourceName,
                     ["message"] = message,
                     ["path"] = TargetPath,
-                    ["sha256"] = ExpectedSha256
+                    ["sha256"] = string.Empty
                 };
             }
         }
@@ -157,36 +187,41 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private static void DownloadLoop(string reason)
         {
             string workDirectory = WorkDirectory();
-            string archivePath = Path.Combine(workDirectory, ArchiveFileName);
+            string archivePath = Path.Combine(workDirectory, "ffmpeg-download.zip");
 
             try
             {
                 Directory.CreateDirectory(workDirectory);
-                for (sourceIndex = 0; sourceIndex < SourceUrls.Length; sourceIndex++)
+                for (sourceIndex = 0; sourceIndex < Sources.Length; sourceIndex++)
                 {
-                    string url = SourceUrls[sourceIndex];
-                    string name = SourceNames[sourceIndex];
+                    Source source = Sources[sourceIndex];
+                    if (string.IsNullOrEmpty(source.Url))
+                    {
+                        continue;
+                    }
+
                     lock (Sync)
                     {
-                        sourceName = name;
+                        sourceName = source.Name;
                         message = string.Empty;
                         downloadedBytes = 0;
+                        totalBytes = source.Size;
                         state = "downloading";
                     }
 
-                    Main.Log("[FFmpeg] Downloading " + Version + " from " + name + " (" + url + ") because " + reason + ".");
+                    Main.Log("[FFmpeg] Downloading " + source.Name + " (" + source.Url + ") because " + reason + ".");
                     try
                     {
-                        DownloadArchive(url, archivePath);
+                        DownloadArchive(source.Url, archivePath);
                         lock (Sync)
                         {
                             state = "verifying";
                         }
 
                         string digest = ComputeSha256(archivePath);
-                        if (!string.Equals(digest, ExpectedSha256, StringComparison.OrdinalIgnoreCase))
+                        if (!string.Equals(digest, source.Sha256, StringComparison.OrdinalIgnoreCase))
                         {
-                            throw new InvalidDataException("SHA256 mismatch: expected " + ExpectedSha256 + ", got " + digest + ".");
+                            throw new InvalidDataException("SHA256 mismatch: expected " + source.Sha256 + ", got " + digest + ".");
                         }
 
                         lock (Sync)
@@ -200,21 +235,22 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                             state = "ready";
                             running = false;
                             message = string.Empty;
-                            downloadedBytes = ExpectedSize;
-                            totalBytes = ExpectedSize;
+                            installedVariant = source.Name;
+                            downloadedBytes = source.Size;
+                            totalBytes = source.Size;
                         }
 
-                        Main.Log("[FFmpeg] Installed " + Version + " to " + TargetPath + ".");
+                        Main.Log("[FFmpeg] Installed " + source.Name + " to " + TargetPath + ".");
                         ChartEncoderCapabilities.InvalidateSessionProbes(ChartRenderPaths.GetFfmpegPath());
                         TryDelete(archivePath);
                         return;
                     }
                     catch (Exception exception)
                     {
-                        Main.Log("[FFmpeg] " + name + " failed: " + exception.Message);
+                        Main.Log("[FFmpeg] " + source.Name + " failed: " + exception.Message);
                         lock (Sync)
                         {
-                            message = name + " 下载失败：" + exception.Message;
+                            message = source.Name + " 下载失败：" + exception.Message;
                         }
 
                         TryDelete(archivePath);
@@ -225,7 +261,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 {
                     state = "failed";
                     running = false;
-                    message = "FFmpeg 自动下载失败，请检查网络后重试，或手动安装 FFmpeg（放到游戏目录的 ffmpeg 文件夹）。";
+                    message = "FFmpeg 自动下载失败，请检查网络后重试；也可以改用完整版 FFmpeg（下载带 -Full 后缀的安装包），或手动把 ffmpeg.exe 放到游戏目录的 ffmpeg 文件夹。";
                 }
             }
             catch (Exception exception)
@@ -259,7 +295,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 long length = response.ContentLength;
                 lock (Sync)
                 {
-                    totalBytes = length > 0 ? length : ExpectedSize;
+                    totalBytes = length > 0 ? length : totalBytes;
                 }
 
                 byte[] buffer = new byte[64 * 1024];
