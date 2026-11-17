@@ -492,7 +492,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             {
                 errorCode = ChartRenderErrorCode.InitializationFailed;
                 error = "FFmpeg executable was not found: " + ffmpegPath
-                    + ". Reinstall the mod or set a custom FFmpeg path.";
+                    + ". Reinstall the mod or set a custom FFmpeg path."
+                    + " / 未找到 FFmpeg：完整版安装包已自带；轻量版请另外安装 FFmpeg"
+                    + "（放到游戏目录的 ffmpeg 文件夹，或在设置里指定路径）。";
                 return false;
             }
 
