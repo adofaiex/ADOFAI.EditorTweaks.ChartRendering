@@ -487,6 +487,18 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                         return StateResult();
                     }, context);
                     return;
+                case "/api/ffmpeg/install":
+                    ExecuteOnMain(() =>
+                    {
+                        if (ChartRenderService.IsActive)
+                        {
+                            return new CommandResult(409, Error("渲染进行中，FFmpeg 会在开始渲染前自动准备。"));
+                        }
+
+                        ChartFfmpegInstaller.Start("requested from the settings page");
+                        return StateResult();
+                    }, context);
+                    return;
                 default:
                     WriteJson(context, 404, Error("Unknown WebUI API route."));
                     return;

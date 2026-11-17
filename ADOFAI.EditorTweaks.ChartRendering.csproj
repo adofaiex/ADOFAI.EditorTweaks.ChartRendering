@@ -66,6 +66,12 @@
     <Reference Include="netstandard">
       <HintPath>$(ManagedAssembliesDir)\netstandard.dll</HintPath>
     </Reference>
+    <Reference Include="System.IO.Compression">
+      <HintPath>$(ManagedAssembliesDir)\System.IO.Compression.dll</HintPath>
+    </Reference>
+    <Reference Include="System.IO.Compression.FileSystem">
+      <HintPath>$(ManagedAssembliesDir)\System.IO.Compression.FileSystem.dll</HintPath>
+    </Reference>
     <Reference Include="mscorlib" Condition="'$(UseGameMscorlib)' != 'false'">
       <HintPath>$(ManagedAssembliesDir)\mscorlib.dll</HintPath>
     </Reference>

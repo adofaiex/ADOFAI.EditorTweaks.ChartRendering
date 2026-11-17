@@ -162,6 +162,44 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 yield break;
             }
 
+            bool downloadedFfmpeg = false;
+            if (!ChartFfmpegInstaller.IsReady)
+            {
+                // The package no longer ships ffmpeg.exe; fetch it before touching the game so the
+                // user sees what the wait is for instead of a generic encoder error later.
+                WriteLog("FFmpeg is not installed; downloading it before the render starts.");
+                ChartFfmpegInstaller.Start("render requested without FFmpeg");
+                float ffmpegWait = 0f;
+                while (!ChartFfmpegInstaller.IsReady && ChartFfmpegInstaller.IsBusy
+                    && !IsCancellationRequested && ffmpegWait < 900f)
+                {
+                    DetailText = ChartFfmpegInstaller.Describe();
+                    yield return null;
+                    ffmpegWait += Time.unscaledDeltaTime;
+                }
+
+                if (!ChartFfmpegInstaller.IsReady)
+                {
+                    result.Success = false;
+                    result.ErrorCode = ChartRenderErrorCode.InitializationFailed;
+                    result.Message = "FFmpeg is required to render but is not installed. "
+                        + ChartFfmpegInstaller.Describe()
+                        + " / 渲染需要 FFmpeg，但当前不可用：" + ChartFfmpegInstaller.Describe()
+                        + " 请检查网络后重试，或手动把 ffmpeg.exe 放到游戏目录的 ffmpeg 文件夹。";
+                    Finish(onComplete, result);
+                    yield break;
+                }
+
+                downloadedFfmpeg = true;
+                WriteLog("FFmpeg is ready.");
+            }
+
+            if (downloadedFfmpeg)
+            {
+                // Probe again now that the executable exists; earlier results were "not installed".
+                ChartEncoderCapabilities.StartDetection();
+            }
+
             if (!Try(() => audioBuffer.Begin(), out failure))
             {
                 result.Success = false;

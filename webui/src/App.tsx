@@ -23,7 +23,7 @@ import {
 } from "@arco-design/web-react/icon";
 import React from "react";
 import { createEventSource, createMockState, isLocalPreview, localDocumentUrl, postJson } from "./api";
-import type { EncoderState, PageKey, PatchStatus, RenderState, SettingsState, WebUiState } from "./types";
+import type { EncoderState, FfmpegState, PageKey, PatchStatus, RenderState, SettingsState, WebUiState } from "./types";
 
 const pageItems: Array<{ key: PageKey; label: string; description: string; icon: React.ReactNode }> = [
   { key: "overview", label: "总览", description: "兼容性与全部功能状态", icon: <IconApps /> },
@@ -418,6 +418,13 @@ function App() {
             {" "}如果游戏已经重新启动，这个页面无法再连接，请在游戏里按设置页快捷键重新打开。</span>
         </div>
       </div> : null}
+      {state.ffmpeg.status !== "ready" ? (
+        <FfmpegNotice
+          ffmpeg={state.ffmpeg}
+          disabled={state.render.active}
+          onInstall={() => runAction("/api/ffmpeg/install")}
+        />
+      ) : null}
       <div className="workspace">
         <aside className="sidebar">
           <div className="sidebar-title">功能导航</div>
@@ -457,6 +464,30 @@ function App() {
         <span className="status-divider" />
         <span className="status-version">EDITOR TWEAKS {state.compatibility.modVersion}</span>
       </footer>
+    </div>
+  );
+}
+
+function FfmpegNotice({ ffmpeg, disabled, onInstall }: { ffmpeg: FfmpegState; disabled: boolean; onInstall: () => void }) {
+  const percent = Math.round(Math.max(0, Math.min(1, ffmpeg.progress)) * 100);
+  const megabytes = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1);
+  const busy = ffmpeg.status === "downloading" || ffmpeg.status === "verifying" || ffmpeg.status === "installing";
+  const failed = ffmpeg.status === "failed";
+  const title = failed ? "FFmpeg 自动下载失败" : busy ? "正在准备 FFmpeg" : "需要安装 FFmpeg";
+  const detail = failed
+    ? (ffmpeg.message || "请检查网络后重试，或手动安装 FFmpeg。")
+    : busy
+      ? `${ffmpeg.status === "installing" ? "正在安装" : ffmpeg.status === "verifying" ? "正在校验" : "正在下载"} ${percent}%（${megabytes(ffmpeg.downloadedBytes)} / ${megabytes(ffmpeg.totalBytes)} MB，来源 ${ffmpeg.source || "准备中"}）`
+      : "渲染视频需要 FFmpeg（约 88 MB），首次使用会自动下载；也可以现在手动开始。";
+  return (
+    <div className={`ffmpeg-notice ${failed ? "is-error" : ""}`} role="status">
+      <IconDown />
+      <div className="ffmpeg-notice-body">
+        <strong>{title}</strong>
+        <span>{detail}</span>
+        {busy ? <div className="ffmpeg-progress"><div style={{ width: `${percent}%` }} /></div> : null}
+      </div>
+      {!busy ? <button type="button" onClick={onInstall} disabled={disabled}>{failed ? "重试" : "开始下载"}</button> : null}
     </div>
   );
 }

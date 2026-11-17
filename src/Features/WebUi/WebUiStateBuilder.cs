@@ -68,6 +68,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 },
                 ["settings"] = BuildSettings(Main.Settings),
                 ["encoders"] = Features.ChartRendering.ChartEncoderCapabilities.BuildState(),
+                ["ffmpeg"] = Features.ChartRendering.ChartFfmpegInstaller.BuildState(),
                 ["render"] = BuildRenderState(renderTask)
             };
         }

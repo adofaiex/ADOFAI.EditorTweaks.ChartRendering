@@ -10,7 +10,7 @@
 2. 下载 [Releases](https://github.com/adofaiex/ADOFAI.EditorTweaks.ChartRendering/releases) 里的 `ADOFAI.EditorTweaks.ChartRendering-版本号.zip`。
 3. 解压到游戏目录的 `Mods\` 下，得到 `Mods\ADOFAI.EditorTweaks.ChartRendering\`。升级时直接覆盖。
 
-安装包已经自带 FFmpeg，不需要另外下载。
+首次渲染前需要 FFmpeg（约 88 MB）。默认包会在开始渲染时自动下载并校验，不需要手动处理；需要离线使用可以下载带 `-Full` 后缀的完整包，或把 `ffmpeg.exe` 放到游戏目录的 `ffmpeg` 文件夹。
 
 ## 使用
 

@@ -490,12 +490,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             string ffmpegPath = ChartRenderPaths.GetFfmpegPath();
             if (!File.Exists(ffmpegPath))
             {
-                errorCode = ChartRenderErrorCode.InitializationFailed;
-                error = "FFmpeg executable was not found: " + ffmpegPath
-                    + ". Reinstall the mod or set a custom FFmpeg path."
-                    + " / 未找到 FFmpeg：完整版安装包已自带；轻量版请另外安装 FFmpeg"
-                    + "（放到游戏目录的 ffmpeg 文件夹，或在设置里指定路径）。";
-                return false;
+                // The render session downloads FFmpeg before it starts; failing here would block that.
+                Main.Log("[FFmpeg] Not installed yet; the render will download it first (" + ffmpegPath + ").");
             }
 
             errorCode = ChartRenderErrorCode.None;

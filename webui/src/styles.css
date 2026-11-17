@@ -44,6 +44,19 @@ button { cursor: pointer; }
 .connection-lost-banner { position: fixed; top: 78px; left: 50%; transform: translateX(-50%); z-index: 50; width: min(760px, calc(100vw - 48px)); padding: 14px 18px; display: flex; gap: 12px; align-items: flex-start; color: var(--text); background: rgba(58, 12, 24, 0.95); border: 1px solid var(--danger); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); font-size: 13px; line-height: 1.6; }
 .connection-lost-banner > svg { flex: none; margin-top: 3px; color: var(--danger); font-size: 18px; }
 .connection-lost-banner strong { display: block; margin-bottom: 2px; color: var(--danger); font-size: 14px; }
+
+.ffmpeg-notice { width: min(760px, calc(100vw - 48px)); margin: 16px auto 0; padding: 14px 18px; display: flex; gap: 12px; align-items: flex-start; color: var(--text); background: rgba(48, 34, 12, 0.92); border: 1px solid var(--warning); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); font-size: 13px; line-height: 1.6; }
+.ffmpeg-notice > svg { flex: none; margin-top: 3px; color: var(--warning); font-size: 18px; }
+.ffmpeg-notice.is-error { background: rgba(58, 12, 24, 0.92); border-color: var(--danger); }
+.ffmpeg-notice.is-error > svg { color: var(--danger); }
+.ffmpeg-notice-body { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.ffmpeg-notice-body strong { color: var(--warning); font-size: 14px; }
+.ffmpeg-notice.is-error .ffmpeg-notice-body strong { color: var(--danger); }
+.ffmpeg-notice-body span { color: var(--text); opacity: 0.85; }
+.ffmpeg-notice button { flex: none; align-self: center; padding: 6px 14px; color: #05202a; background: var(--accent); border: 0; font-weight: 600; cursor: pointer; }
+.ffmpeg-notice button:disabled { opacity: 0.5; cursor: default; }
+.ffmpeg-progress { height: 6px; margin-top: 8px; background: rgba(255, 255, 255, 0.14); }
+.ffmpeg-progress > div { height: 100%; background: var(--accent); transition: width 0.2s linear; }
 .connection-dot.is-online, .status-led { background: var(--success); box-shadow: 0 0 8px rgba(63, 224, 180, 0.6); }
 .connection-retry { display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; color: var(--accent); border: 1px solid rgba(61, 187, 226, 0.45); background: rgba(7, 45, 70, 0.7); font-size: 11px; }
 .connection-retry svg { font-size: 13px; }

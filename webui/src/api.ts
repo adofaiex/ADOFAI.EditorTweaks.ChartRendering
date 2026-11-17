@@ -95,6 +95,17 @@ export function createMockState(): WebUiState {
       gpu: "NVIDIA GeForce RTX 3070",
       results: { h264_nvenc: true, hevc_nvenc: true, av1_nvenc: false, h264_amf: false, hevc_amf: false, av1_amf: false, h264_qsv: false, hevc_qsv: false, av1_qsv: false, libx264: true, libx265: true, libsvtav1: true, "libaom-av1": true, libvvenc: true, prores_aw: true },
     },
+    ffmpeg: {
+      status: "ready",
+      version: "9.0.2",
+      progress: 1,
+      downloadedBytes: 88041022,
+      totalBytes: 88041022,
+      source: "ADOFAITools",
+      message: "",
+      path: "Mods/ADOFAI.EditorTweaks.ChartRendering/ThirdParty/FFmpeg/ffmpeg.exe",
+      sha256: "f33a7aa4d379d301dbe650d12b658b15d049974a32948c462bd24726a350b846",
+    },
     render: {
       active: false,
       taskId: "",
