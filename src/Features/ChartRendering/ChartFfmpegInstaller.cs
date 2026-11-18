@@ -47,7 +47,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private static readonly Source[] Sources =
         {
             // Filled in when the release asset is uploaded; empty entries are skipped.
-            new Source("ADOFAITools 精简版", "", SlimSize, SlimSha256),
+            new Source("ADOFAITools 精简版",
+                "https://assets.adofaitools.top/files/92c16423-c815-44a5-8232-7580939a47cf.zip",
+                SlimSize, SlimSha256),
             new Source("GitHub 精简版",
                 "https://github.com/adofaiex/ADOFAI.EditorTweaks.ChartRendering/releases/download/ffmpeg-aetc/FFmpeg-AETC-N-129000-win64.zip",
                 SlimSize, SlimSha256),
