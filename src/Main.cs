@@ -25,6 +25,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             Settings.EnsureDefaults(modEntry);
 
             modEntry.OnToggle = OnToggle;
+            modEntry.OnUpdate = OnUpdate;
             modEntry.OnGUI = Settings.OnGUI;
             modEntry.OnSaveGUI = Settings.OnSaveGUI;
 
@@ -32,9 +33,13 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             return true;
         }
 
-        private static bool OnToggle(UnityModManager.ModEntry modEntry, bool value)
+        private static void OnUpdate(UnityModManager.ModEntry modEntry, float deltaTime)
         {
-            if (value)
+            ChartModStatus.Update(modEntry);
+        }
+
+        private static bool OnToggle(UnityModManager.ModEntry modEntry, bool value)
+        {            if (value)
             {
                 modEntry.Logger.Log("ADOFAI.EditorTweaks.ChartRendering enabled.");
                 PatchManager.ApplyAll(modEntry.Info.Id);
@@ -64,6 +69,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering
                 ChartRenderService.Destroy();
                 ChartRenderCompatibility.Shutdown();
                 PatchManager.UnpatchAll();
+                ChartModStatus.Reset(modEntry);
             }
 
             return true;
