@@ -24,41 +24,44 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private const string EntryNameHint = "ffmpeg.exe";
 
         private const long SlimSize = 13_279_311L;
+        private const long SlimInstalledSize = 46_367_232L;
         private const string SlimSha256 = "90e8f8d2dbaa47fffc2b7118bc1345fec7b36a7046a22269f4a3928083b24558";
         private const long FullSize = 88_041_022L;
+        private const long FullInstalledSize = 227_823_104L;
         private const string FullSha256 = "f33a7aa4d379d301dbe650d12b658b15d049974a32948c462bd24726a350b846";
 
         private sealed class Source
         {
-            public Source(string name, string url, long size, string sha256)
+            public Source(string name, string url, long size, long installedSize, string sha256)
             {
                 Name = name;
                 Url = url;
                 Size = size;
+                InstalledSize = installedSize;
                 Sha256 = sha256;
             }
 
             public string Name { get; }
             public string Url { get; }
             public long Size { get; }
+            public long InstalledSize { get; }
             public string Sha256 { get; }
         }
 
         private static readonly Source[] Sources =
         {
-            // Filled in when the release asset is uploaded; empty entries are skipped.
             new Source("ADOFAITools 精简版",
                 "https://assets.adofaitools.top/files/92c16423-c815-44a5-8232-7580939a47cf.zip",
-                SlimSize, SlimSha256),
+                SlimSize, SlimInstalledSize, SlimSha256),
             new Source("GitHub 精简版",
                 "https://github.com/adofaiex/ADOFAI.EditorTweaks.ChartRendering/releases/download/ffmpeg-aetc/FFmpeg-AETC-N-129000-win64.zip",
-                SlimSize, SlimSha256),
+                SlimSize, SlimInstalledSize, SlimSha256),
             new Source("ADOFAITools 完整版",
                 "https://assets.adofaitools.top/files/bf68b99d-e905-4fc8-8dd4-0b050e0e0f41.zip",
-                FullSize, FullSha256),
+                FullSize, FullInstalledSize, FullSha256),
             new Source("GitHub 完整版",
                 "https://github.com/adofaiex/ADOFAI.EditorTweaks.ChartRendering/releases/download/ffmpeg-9.0.2/FFmpeg-9.0.2-full_build-win64.zip",
-                FullSize, FullSha256),
+                FullSize, FullInstalledSize, FullSha256),
         };
 
         private static readonly object Sync = new object();
@@ -70,6 +73,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private static string installedVariant = string.Empty;
         private static long downloadedBytes;
         private static long totalBytes = SlimSize;
+        private static long installedBytes = SlimInstalledSize;
         private static int sourceIndex;
 
         public static string TargetPath
@@ -131,6 +135,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 message = string.Empty;
                 downloadedBytes = 0;
                 totalBytes = SlimSize;
+                installedBytes = SlimInstalledSize;
                 sourceName = string.Empty;
                 installedVariant = string.Empty;
                 sourceIndex = 0;
@@ -178,6 +183,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     ["progress"] = ready ? 1f : Progress,
                     ["downloadedBytes"] = downloadedBytes,
                     ["totalBytes"] = totalBytes,
+                    ["installedBytes"] = installedBytes,
                     ["source"] = sourceName,
                     ["message"] = message,
                     ["path"] = TargetPath,
@@ -208,6 +214,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                         message = string.Empty;
                         downloadedBytes = 0;
                         totalBytes = source.Size;
+                        installedBytes = source.InstalledSize;
                         state = "downloading";
                     }
 

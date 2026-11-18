@@ -477,8 +477,8 @@ function FfmpegNotice({ ffmpeg, disabled, onInstall }: { ffmpeg: FfmpegState; di
   const detail = failed
     ? (ffmpeg.message || "请检查网络后重试，或手动安装 FFmpeg。")
     : busy
-      ? `${ffmpeg.status === "installing" ? "正在安装" : ffmpeg.status === "verifying" ? "正在校验" : "正在下载"} ${percent}%（${megabytes(ffmpeg.downloadedBytes)} / ${megabytes(ffmpeg.totalBytes)} MB，来源 ${ffmpeg.source || "准备中"}）`
-      : "渲染视频需要 FFmpeg（约 88 MB），首次使用会自动下载；也可以现在手动开始。";
+      ? `${ffmpeg.status === "installing" ? "正在安装" : ffmpeg.status === "verifying" ? "正在校验" : "正在下载"} ${percent}%（${megabytes(ffmpeg.downloadedBytes)} / ${megabytes(ffmpeg.totalBytes)} MB，安装后约 ${megabytes(ffmpeg.installedBytes)} MB，来源 ${ffmpeg.source || "准备中"}）`
+      : `渲染视频需要 FFmpeg（安装后约 ${megabytes(ffmpeg.installedBytes)} MB），首次使用会自动下载；也可以现在手动开始。`;
   return (
     <div className={`ffmpeg-notice ${failed ? "is-error" : ""}`} role="status">
       <IconDown />
