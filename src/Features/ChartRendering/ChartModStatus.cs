@@ -29,6 +29,12 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 suffix = string.Empty;
             }
 
+            if (ChartUpdateChecker.IsAvailable)
+            {
+                string updateSuffix = "[有新版本 " + ChartUpdateChecker.Latest + "]";
+                suffix = suffix.Length == 0 ? updateSuffix : suffix + " " + updateSuffix;
+            }
+
             string text = suffix.Length == 0 ? BaseName : BaseName + "  " + suffix;
             if (string.Equals(text, lastText, StringComparison.Ordinal))
             {

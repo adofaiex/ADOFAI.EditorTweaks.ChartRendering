@@ -42,6 +42,26 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             GUILayout.EndHorizontal();
             GUILayout.EndVertical();
 
+            if (ChartUpdateChecker.IsAvailable)
+            {
+                GUILayout.BeginVertical(GUI.skin.box);
+                GUILayout.Label("有新版本 " + ChartUpdateChecker.Latest + "：请用 UMM 或 Aurora 更新。");
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("在 Aurora 中更新", GUILayout.Width(180f)))
+                {
+                    Application.OpenURL(ChartUpdateChecker.AuroraUrl);
+                }
+
+                if (GUILayout.Button("打开下载页", GUILayout.Width(160f)))
+                {
+                    Application.OpenURL(ChartUpdateChecker.DownloadUrl);
+                }
+
+                GUILayout.FlexibleSpace();
+                GUILayout.EndHorizontal();
+                GUILayout.EndVertical();
+            }
+
             GUILayout.BeginVertical(GUI.skin.box);
             GUILayout.Label("Web 设置页面");
             GUILayout.BeginHorizontal();

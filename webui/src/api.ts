@@ -108,6 +108,14 @@ export function createMockState(): WebUiState {
       path: "Mods/ADOFAI.EditorTweaks.ChartRendering/ThirdParty/FFmpeg/ffmpeg.exe",
       sha256: "90e8f8d2dbaa47fffc2b7118bc1345fec7b36a7046a22269f4a3928083b24558",
     },
+    update: {
+      status: "current",
+      latest: "1.1.1",
+      current: "1.1.1",
+      url: "https://github.com/adofaiex/ADOFAI.EditorTweaks.ChartRendering/releases",
+      notes: "",
+      auroraUrl: "https://www.adofaitools.top/tools/adofai-mod-manager",
+    },
     render: {
       active: false,
       taskId: "",

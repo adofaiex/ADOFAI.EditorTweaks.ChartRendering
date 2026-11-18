@@ -23,7 +23,7 @@ import {
 } from "@arco-design/web-react/icon";
 import React from "react";
 import { createEventSource, createMockState, isLocalPreview, localDocumentUrl, postJson } from "./api";
-import type { EncoderState, FfmpegState, PageKey, PatchStatus, RenderState, SettingsState, WebUiState } from "./types";
+import type { EncoderState, FfmpegState, PageKey, PatchStatus, RenderState, SettingsState, UpdateState, WebUiState } from "./types";
 
 const pageItems: Array<{ key: PageKey; label: string; description: string; icon: React.ReactNode }> = [
   { key: "overview", label: "总览", description: "兼容性与全部功能状态", icon: <IconApps /> },
@@ -475,6 +475,7 @@ function App() {
         </aside>
 
         <main className="main-content">
+          {state.update.status === "available" ? <UpdateNotice update={state.update} /> : null}
           {state.ffmpeg.status !== "ready" ? (
             <FfmpegNotice
               ffmpeg={state.ffmpeg}
@@ -506,6 +507,23 @@ function App() {
         <span className="status-divider" />
         <span className="status-version">EDITOR TWEAKS {state.compatibility.modVersion}</span>
       </footer>
+    </div>
+  );
+}
+
+function UpdateNotice({ update }: { update: UpdateState }) {
+  const open = (url: string) => window.open(url, "_blank", "noopener");
+  return (
+    <div className="update-notice" role="status">
+      <IconCheckCircle />
+      <div className="update-notice-body">
+        <strong>发现新版本 {update.latest}</strong>
+        <span>当前版本 {update.current}。推荐用 Aurora 更新，也可以在资源站或 GitHub 下载新包；更新由 UMM / Aurora 完成。</span>
+      </div>
+      <div className="update-notice-actions">
+        <button type="button" onClick={() => open(update.auroraUrl)}>在 Aurora 中更新</button>
+        <button type="button" className="is-secondary" onClick={() => open(update.url)}>打开下载页</button>
+      </div>
     </div>
   );
 }
