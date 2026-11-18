@@ -418,14 +418,6 @@ function App() {
             {" "}如果游戏已经重新启动，这个页面无法再连接，请在游戏里按设置页快捷键重新打开。</span>
         </div>
       </div> : null}
-      {state.ffmpeg.status !== "ready" ? (
-        <FfmpegNotice
-          ffmpeg={state.ffmpeg}
-          disabled={state.render.active}
-          onInstall={() => runAction("/api/ffmpeg/install", { variant: "custom" })}
-          onInstallFull={() => runAction("/api/ffmpeg/install", { variant: "full" })}
-        />
-      ) : null}
       <div className="workspace">
         <aside className="sidebar">
           <div className="sidebar-title">功能导航</div>
@@ -447,6 +439,14 @@ function App() {
         </aside>
 
         <main className="main-content">
+          {state.ffmpeg.status !== "ready" ? (
+            <FfmpegNotice
+              ffmpeg={state.ffmpeg}
+              disabled={state.render.active}
+              onInstall={() => runAction("/api/ffmpeg/install", { variant: "custom" })}
+              onInstallFull={() => runAction("/api/ffmpeg/install", { variant: "full" })}
+            />
+          ) : null}
           {loading ? <div className="loading-state"><Spin size={32} /><span>正在连接 Mod 服务…</span></div> : null}
           {!loading && visibleRender ? (
             <RenderPage state={state} offline={!demoMode && !connected} onSettings={updateSettings} onOpenDocument={openDocument} onStart={() => renderAction("start")} onCancel={() => renderAction("cancel")} />
