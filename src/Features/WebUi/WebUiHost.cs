@@ -58,6 +58,17 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
 
         public static string LanUrl => instance?.lanUrl ?? string.Empty;
 
+        // Main thread (the UMM settings panel). Same flow as the open-page hotkey.
+        public static void OpenFromModMenu()
+        {
+            if (instance == null || instance.openSettingsPageRoutine != null)
+            {
+                return;
+            }
+
+            instance.openSettingsPageRoutine = instance.StartCoroutine(instance.OpenSettingsPageRoutine());
+        }
+
         public static IReadOnlyList<string> LanUrls =>
             instance != null ? (IReadOnlyList<string>)instance.lanUrls : Array.Empty<string>();
 

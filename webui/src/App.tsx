@@ -174,6 +174,8 @@ function App() {
   const [state, setState] = React.useState<WebUiState>(() => createMockState());
   const [page, setPage] = React.useState<PageKey>("overview");
   const [loading, setLoading] = React.useState(true);
+  const [autoDownloadSeconds, setAutoDownloadSeconds] = React.useState<number | null>(null);
+  const autoDownloadCancelled = React.useRef(false);
   const [connected, setConnected] = React.useState(false);
   const [reconnecting, setReconnecting] = React.useState(false);
   const [connectionReload, setConnectionReload] = React.useState(0);
@@ -370,6 +372,40 @@ function App() {
     }
   };
 
+  React.useEffect(() => {
+    if (state.ffmpeg.status !== "missing") {
+      autoDownloadCancelled.current = false;
+      setAutoDownloadSeconds(null);
+      return;
+    }
+
+    if (demoMode || !connected || autoDownloadCancelled.current) {
+      setAutoDownloadSeconds(null);
+      return;
+    }
+
+    setAutoDownloadSeconds((current) => (current == null ? 3 : current));
+  }, [state.ffmpeg.status, demoMode, connected]);
+
+  React.useEffect(() => {
+    if (autoDownloadSeconds == null) {
+      return;
+    }
+
+    if (autoDownloadSeconds <= 0) {
+      setAutoDownloadSeconds(null);
+      autoDownloadCancelled.current = true;
+      void runAction("/api/ffmpeg/install", { variant: "custom" });
+      return;
+    }
+
+    const timer = window.setTimeout(
+      () => setAutoDownloadSeconds((value) => (value == null ? null : value - 1)),
+      1000,
+    );
+    return () => window.clearTimeout(timer);
+  }, [autoDownloadSeconds]);
+
   const openDocument = (path: string) => {
     if (localPreview) {
       Message.info("本地预览没有连接 Mod 服务，帮助页面无法打开。");
@@ -443,6 +479,11 @@ function App() {
             <FfmpegNotice
               ffmpeg={state.ffmpeg}
               disabled={state.render.active}
+              countdown={autoDownloadSeconds}
+              onCancelAuto={() => {
+                autoDownloadCancelled.current = true;
+                setAutoDownloadSeconds(null);
+              }}
               onInstall={() => runAction("/api/ffmpeg/install", { variant: "custom" })}
               onInstallFull={() => runAction("/api/ffmpeg/install", { variant: "full" })}
             />
@@ -469,17 +510,20 @@ function App() {
   );
 }
 
-function FfmpegNotice({ ffmpeg, disabled, onInstall, onInstallFull }: { ffmpeg: FfmpegState; disabled: boolean; onInstall: () => void; onInstallFull: () => void }) {
+function FfmpegNotice({ ffmpeg, disabled, countdown, onCancelAuto, onInstall, onInstallFull }: { ffmpeg: FfmpegState; disabled: boolean; countdown: number | null; onCancelAuto: () => void; onInstall: () => void; onInstallFull: () => void }) {
   const percent = Math.round(Math.max(0, Math.min(1, ffmpeg.progress)) * 100);
   const megabytes = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1);
   const busy = ffmpeg.status === "downloading" || ffmpeg.status === "verifying" || ffmpeg.status === "installing";
   const failed = ffmpeg.status === "failed";
-  const title = failed ? "FFmpeg 自动下载失败" : busy ? "正在准备 FFmpeg" : "需要安装 FFmpeg";
+  const counting = countdown != null && !busy && !failed;
+  const title = failed ? "FFmpeg 自动下载失败" : busy ? "正在准备 FFmpeg" : counting ? "即将自动下载 FFmpeg" : "需要安装 FFmpeg";
   const detail = failed
     ? (ffmpeg.message || "请检查网络后重试，或手动安装 FFmpeg。")
     : busy
       ? `${ffmpeg.status === "installing" ? "正在安装" : ffmpeg.status === "verifying" ? "正在校验" : "正在下载"} ${percent}%（${megabytes(ffmpeg.downloadedBytes)} / ${megabytes(ffmpeg.totalBytes)} MB，安装后约 ${megabytes(ffmpeg.installedBytes)} MB，来源 ${ffmpeg.source || "准备中"}）`
-      : `需要安装 FFmpeg。定制版：下载约 12.7 MB，安装后约 44.2 MB；完整版：下载约 84.0 MB，安装后约 217.3 MB。开始渲染时会自动下载定制版；也可以现在手动选择。`;
+      : counting
+        ? `${countdown} 秒后自动下载定制版（下载约 12.7 MB，安装后约 44.2 MB）。不需要的话可以取消；也可以直接选完整版（下载约 84.0 MB，安装后约 217.3 MB）。`
+        : `需要安装 FFmpeg。定制版：下载约 12.7 MB，安装后约 44.2 MB；完整版：下载约 84.0 MB，安装后约 217.3 MB。开始渲染时会自动下载定制版；也可以现在手动选择。`;
   return (
     <div className={`ffmpeg-notice ${failed ? "is-error" : ""}`} role="status">
       <IconDown />
@@ -490,8 +534,12 @@ function FfmpegNotice({ ffmpeg, disabled, onInstall, onInstallFull }: { ffmpeg: 
       </div>
       {!busy ? (
         <div className="ffmpeg-notice-actions">
-          <button type="button" onClick={onInstall} disabled={disabled}>{failed ? "重试定制版" : "下载定制版"}</button>
-          <button type="button" className="is-secondary" onClick={onInstallFull} disabled={disabled}>下载完整版</button>
+          <button type="button" onClick={onInstall} disabled={disabled}>{failed ? "重试定制版" : counting ? "立即下载" : "下载定制版"}</button>
+          {counting ? (
+            <button type="button" className="is-secondary" onClick={onCancelAuto} disabled={disabled}>取消自动下载</button>
+          ) : (
+            <button type="button" className="is-secondary" onClick={onInstallFull} disabled={disabled}>下载完整版</button>
+          )}
         </div>
       ) : null}
     </div>
