@@ -355,14 +355,14 @@ function App() {
     }
   };
 
-  const runAction = async (path: string) => {
+  const runAction = async (path: string, body?: unknown) => {
     if (demoMode) {
       Message.success("演示状态：操作已完成");
       return;
     }
 
     try {
-      const response = await postJson<{ state: WebUiState }>(path);
+      const response = await postJson<{ state: WebUiState }>(path, body ?? {});
       if (response.state) setState(response.state);
       Message.success("操作已完成");
     } catch (error) {
@@ -422,7 +422,8 @@ function App() {
         <FfmpegNotice
           ffmpeg={state.ffmpeg}
           disabled={state.render.active}
-          onInstall={() => runAction("/api/ffmpeg/install")}
+          onInstall={() => runAction("/api/ffmpeg/install", { variant: "custom" })}
+          onInstallFull={() => runAction("/api/ffmpeg/install", { variant: "full" })}
         />
       ) : null}
       <div className="workspace">
@@ -468,7 +469,7 @@ function App() {
   );
 }
 
-function FfmpegNotice({ ffmpeg, disabled, onInstall }: { ffmpeg: FfmpegState; disabled: boolean; onInstall: () => void }) {
+function FfmpegNotice({ ffmpeg, disabled, onInstall, onInstallFull }: { ffmpeg: FfmpegState; disabled: boolean; onInstall: () => void; onInstallFull: () => void }) {
   const percent = Math.round(Math.max(0, Math.min(1, ffmpeg.progress)) * 100);
   const megabytes = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1);
   const busy = ffmpeg.status === "downloading" || ffmpeg.status === "verifying" || ffmpeg.status === "installing";
@@ -478,7 +479,7 @@ function FfmpegNotice({ ffmpeg, disabled, onInstall }: { ffmpeg: FfmpegState; di
     ? (ffmpeg.message || "请检查网络后重试，或手动安装 FFmpeg。")
     : busy
       ? `${ffmpeg.status === "installing" ? "正在安装" : ffmpeg.status === "verifying" ? "正在校验" : "正在下载"} ${percent}%（${megabytes(ffmpeg.downloadedBytes)} / ${megabytes(ffmpeg.totalBytes)} MB，安装后约 ${megabytes(ffmpeg.installedBytes)} MB，来源 ${ffmpeg.source || "准备中"}）`
-      : `渲染视频需要 FFmpeg（安装后约 ${megabytes(ffmpeg.installedBytes)} MB），首次使用会自动下载；也可以现在手动开始。`;
+      : `渲染视频需要 FFmpeg。默认下载 AETC 定制版（安装后约 ${megabytes(ffmpeg.installedBytes)} MB）；如果遇到编码兼容问题，或者不方便联网，可以改用完整版（安装后约 217.3 MB）。`;
   return (
     <div className={`ffmpeg-notice ${failed ? "is-error" : ""}`} role="status">
       <IconDown />
@@ -487,7 +488,12 @@ function FfmpegNotice({ ffmpeg, disabled, onInstall }: { ffmpeg: FfmpegState; di
         <span>{detail}</span>
         {busy ? <div className="ffmpeg-progress"><div style={{ width: `${percent}%` }} /></div> : null}
       </div>
-      {!busy ? <button type="button" onClick={onInstall} disabled={disabled}>{failed ? "重试" : "开始下载"}</button> : null}
+      {!busy ? (
+        <div className="ffmpeg-notice-actions">
+          <button type="button" onClick={onInstall} disabled={disabled}>{failed ? "重试定制版" : "下载定制版"}</button>
+          <button type="button" className="is-secondary" onClick={onInstallFull} disabled={disabled}>完整版</button>
+        </div>
+      ) : null}
     </div>
   );
 }

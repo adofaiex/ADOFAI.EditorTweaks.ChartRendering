@@ -98,7 +98,7 @@ export function createMockState(): WebUiState {
     ffmpeg: {
       status: "ready",
       version: "AETC N-129000",
-      variant: "ADOFAITools 精简版",
+      variant: "ADOFAITools 定制版",
       progress: 1,
       downloadedBytes: 13279311,
       totalBytes: 13279311,

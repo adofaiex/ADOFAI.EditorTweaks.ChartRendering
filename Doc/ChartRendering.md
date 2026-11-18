@@ -474,13 +474,13 @@ Patch `scrSfx.PlaySfx(... InterfaceParent ...)` 的原因：
 
 ## FFmpeg
 
-自带的是 gyan.dev 的 **9.0.2 full build**（`ffmpeg-release-full.7z`，约 228 MB），不是精简版。它提供 `libsvtav1`、`libvvenc`、`libaom-av1`、`libx264`、`libx265` 等编码器。`scripts/EnsureFfmpeg.ps1` 会用 `curl.exe` 下载、用 Windows 自带的 `tar.exe` 解压 `.7z`，并在发现旧的 essentials 版本时自动替换。
+自带的是 gyan.dev 的 **9.0.2 full build**（`ffmpeg-release-full.7z`，约 228 MB），不是定制版。它提供 `libsvtav1`、`libvvenc`、`libaom-av1`、`libx264`、`libx265` 等编码器。`scripts/EnsureFfmpeg.ps1` 会用 `curl.exe` 下载、用 Windows 自带的 `tar.exe` 解压 `.7z`，并在发现旧的 essentials 版本时自动替换。
 
 主安装包不再附带 `ffmpeg.exe`。`ChartFfmpegInstaller` 会在第一次渲染前自动下载 AETC 专用的精简构建（约 13 MB），校验固定的 SHA256 后解压到 `ThirdParty/FFmpeg/ffmpeg.exe`：
 
-- 下载源按顺序尝试：ADOFAITools 精简版 → GitHub 精简版 → ADOFAITools 完整版（gyan 9.0.2，约 88 MB）→ GitHub 完整版。每个源都有自己的大小和 SHA256。
-- 精简版只保留 AETC 用到的编码器、封装器、滤镜和协议；完整版作为兼容性回退，精简版不可用或某台机器编码异常时可以改用它。
-- 下载过程写入设置页状态（`ffmpeg.status` / `progress` / `source`），渲染会话在开始前等待，失败时直接报出原因。设置页按**安装后大小**显示（精简版约 44 MB、完整版约 217 MB），进度条仍按实际下载字节走。
+- 下载源按顺序尝试：ADOFAITools 定制版 → GitHub 定制版 → ADOFAITools 完整版（gyan 9.0.2，约 88 MB）→ GitHub 完整版。每个源都有自己的大小和 SHA256。
+- 定制版只保留 AETC 用到的编码器、封装器、滤镜和协议；完整版作为兼容性回退，定制版不可用或某台机器编码异常时可以改用它。
+- 下载过程写入设置页状态（`ffmpeg.status` / `progress` / `source`），渲染会话在开始前等待，失败时直接报出原因。设置页按**安装后大小**显示（定制版约 44 MB、完整版约 217 MB），进度条仍按实际下载字节走。
 - 安装成功后清空编码器的会话内探测缓存，并重新检测，避免把“没有 FFmpeg”时的失败结果当成硬件不可用。
 - 完整包（`-Full`）仍自带完整版 `ffmpeg.exe`，不触发下载；离线环境用它。
 

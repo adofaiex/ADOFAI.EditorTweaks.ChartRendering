@@ -495,7 +495,10 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                             return new CommandResult(409, Error("渲染进行中，FFmpeg 会在开始渲染前自动准备。"));
                         }
 
-                        ChartFfmpegInstaller.Start("requested from the settings page");
+                        bool preferFull = body.TryGetValue("variant", out object variant)
+                            && variant is string name
+                            && string.Equals(name, "full", StringComparison.OrdinalIgnoreCase);
+                        ChartFfmpegInstaller.Start("requested from the settings page", preferFull);
                         return StateResult();
                     }, context);
                     return;

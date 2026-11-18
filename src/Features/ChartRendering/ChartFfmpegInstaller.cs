@@ -50,10 +50,10 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         private static readonly Source[] Sources =
         {
-            new Source("ADOFAITools 精简版",
+            new Source("ADOFAITools 定制版",
                 "https://assets.adofaitools.top/files/92c16423-c815-44a5-8232-7580939a47cf.zip",
                 SlimSize, SlimInstalledSize, SlimSha256),
-            new Source("GitHub 精简版",
+            new Source("GitHub 定制版",
                 "https://github.com/adofaiex/ADOFAI.EditorTweaks.ChartRendering/releases/download/ffmpeg-aetc/FFmpeg-AETC-N-129000-win64.zip",
                 SlimSize, SlimInstalledSize, SlimSha256),
             new Source("ADOFAITools 完整版",
@@ -121,7 +121,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         }
 
         // Called from the settings page and from the render session. Safe to call repeatedly.
-        public static bool Start(string reason)
+        // preferFull starts with the full build, for users who explicitly pick it.
+        public static bool Start(string reason, bool preferFull = false)
         {
             lock (Sync)
             {
@@ -134,12 +135,12 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 state = "downloading";
                 message = string.Empty;
                 downloadedBytes = 0;
-                totalBytes = SlimSize;
-                installedBytes = SlimInstalledSize;
+                totalBytes = preferFull ? FullSize : SlimSize;
+                installedBytes = preferFull ? FullInstalledSize : SlimInstalledSize;
                 sourceName = string.Empty;
                 installedVariant = string.Empty;
                 sourceIndex = 0;
-                worker = new Thread(() => DownloadLoop(reason))
+                worker = new Thread(() => DownloadLoop(reason, preferFull))
                 {
                     IsBackground = true,
                     Name = "ADOFAI.EditorTweaks.ChartRendering.FfmpegInstaller"
@@ -192,17 +193,20 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
         }
 
-        private static void DownloadLoop(string reason)
+        private static void DownloadLoop(string reason, bool preferFull)
         {
+            Source[] sources = preferFull
+                ? new[] { Sources[2], Sources[3], Sources[0], Sources[1] }
+                : Sources;
             string workDirectory = WorkDirectory();
             string archivePath = Path.Combine(workDirectory, "ffmpeg-download.zip");
 
             try
             {
                 Directory.CreateDirectory(workDirectory);
-                for (sourceIndex = 0; sourceIndex < Sources.Length; sourceIndex++)
+                for (sourceIndex = 0; sourceIndex < sources.Length; sourceIndex++)
                 {
-                    Source source = Sources[sourceIndex];
+                    Source source = sources[sourceIndex];
                     if (string.IsNullOrEmpty(source.Url))
                     {
                         continue;
