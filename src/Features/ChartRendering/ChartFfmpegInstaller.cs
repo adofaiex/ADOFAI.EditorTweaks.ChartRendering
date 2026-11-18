@@ -75,6 +75,22 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private static long totalBytes = SlimSize;
         private static long installedBytes = SlimInstalledSize;
         private static int sourceIndex;
+        private static int changeCount;
+        private static int pendingDetection;
+
+        // Main thread reads this to decide whether to push a new state to the settings page.
+        public static int ChangeCount => Volatile.Read(ref changeCount);
+
+        // Set after a successful install so the main thread can re-probe encoders.
+        public static bool TakePendingDetection()
+        {
+            return Interlocked.Exchange(ref pendingDetection, 0) != 0;
+        }
+
+        private static void MarkChanged()
+        {
+            Interlocked.Increment(ref changeCount);
+        }
 
         public static string TargetPath
         {
@@ -146,6 +162,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     Name = "ADOFAI.EditorTweaks.ChartRendering.FfmpegInstaller"
                 };
                 worker.Start();
+                MarkChanged();
                 return true;
             }
         }
@@ -222,6 +239,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                         state = "downloading";
                     }
 
+                    MarkChanged();
+
                     Main.Log("[FFmpeg] Downloading " + source.Name + " (" + source.Url + ") because " + reason + ".");
                     try
                     {
@@ -230,6 +249,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                         {
                             state = "verifying";
                         }
+
+                        MarkChanged();
 
                         string digest = ComputeSha256(archivePath);
                         if (!string.Equals(digest, source.Sha256, StringComparison.OrdinalIgnoreCase))
@@ -242,6 +263,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                             state = "installing";
                         }
 
+                        MarkChanged();
+
                         InstallFromArchive(archivePath);
                         lock (Sync)
                         {
@@ -252,6 +275,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                             downloadedBytes = source.Size;
                             totalBytes = source.Size;
                         }
+
+                        Interlocked.Exchange(ref pendingDetection, 1);
+                        MarkChanged();
 
                         Main.Log("[FFmpeg] Installed " + source.Name + " to " + TargetPath + ".");
                         ChartEncoderCapabilities.InvalidateSessionProbes(ChartRenderPaths.GetFfmpegPath());
@@ -266,6 +292,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                             message = source.Name + " 下载失败：" + exception.Message;
                         }
 
+                        MarkChanged();
                         TryDelete(archivePath);
                     }
                 }
@@ -276,6 +303,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     running = false;
                     message = "FFmpeg 自动下载失败，请检查网络后重试；也可以改用完整版 FFmpeg（下载带 -Full 后缀的安装包），或手动把 ffmpeg.exe 放到游戏目录的 ffmpeg 文件夹。";
                 }
+
+                MarkChanged();
             }
             catch (Exception exception)
             {
@@ -311,6 +340,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     totalBytes = length > 0 ? length : totalBytes;
                 }
 
+                MarkChanged();
+
                 byte[] buffer = new byte[64 * 1024];
                 long written = 0;
                 DateTime lastReport = DateTime.UtcNow;
@@ -327,6 +358,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                         {
                             downloadedBytes = written;
                         }
+
+                        MarkChanged();
                     }
                 }
 
@@ -334,6 +367,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 {
                     downloadedBytes = written;
                 }
+
+                MarkChanged();
             }
 
             if (File.Exists(path))

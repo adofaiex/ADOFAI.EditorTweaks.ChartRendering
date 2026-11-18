@@ -46,6 +46,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
         private string latestStateJson = "{}";
         private ChartRenderTask? renderTask;
         private int lastEncoderChangeCount = -1;
+        private int lastFfmpegChangeCount = -1;
         private Coroutine? openSettingsPageRoutine;
         private float nextStateBroadcastTime;
         private bool stateDirty = true;
@@ -122,6 +123,20 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             if (encoderChanges != lastEncoderChangeCount)
             {
                 lastEncoderChangeCount = encoderChanges;
+                stateDirty = true;
+            }
+
+            // The FFmpeg downloader runs on its own thread; push its progress to the page.
+            int ffmpegChanges = ChartFfmpegInstaller.ChangeCount;
+            if (ffmpegChanges != lastFfmpegChangeCount)
+            {
+                lastFfmpegChangeCount = ffmpegChanges;
+                stateDirty = true;
+            }
+
+            if (ChartFfmpegInstaller.TakePendingDetection())
+            {
+                ChartEncoderCapabilities.StartDetection();
                 stateDirty = true;
             }
 
