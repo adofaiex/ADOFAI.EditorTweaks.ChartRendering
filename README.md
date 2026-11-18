@@ -10,7 +10,7 @@
 2. 下载 [Releases](https://github.com/adofaiex/ADOFAI.EditorTweaks.ChartRendering/releases) 里的 `ADOFAI.EditorTweaks.ChartRendering-版本号.zip`。
 3. 解压到游戏目录的 `Mods\` 下，得到 `Mods\ADOFAI.EditorTweaks.ChartRendering\`。升级时直接覆盖。
 
-首次渲染前需要 FFmpeg。定制版下载约 13 MB、安装后约 44 MB；完整版下载约 84 MB、安装后约 217 MB。默认包会在开始渲染时自动下载定制版并校验，不需要手动处理；下载失败会自动改用完整版。需要离线使用可以下载带 `-Full` 后缀的完整包（自带完整版 FFmpeg），或把 `ffmpeg.exe` 放到游戏目录的 `ffmpeg` 文件夹。
+首次渲染前需要 FFmpeg。定制版下载约 13 MB、安装后约 44 MB；完整版下载约 84 MB、安装后约 217 MB。主包会在开始渲染时自动下载定制版并校验；打开 Web 设置页时也会倒计时 3 秒后自动开始（可取消）。下载顺序是 ADOFAITools → GitHub，定制版失败会自动改用完整版。UMM 模组列表和 AETC 的 UMM 设置面板都会显示当前 FFmpeg 状态，也可以在那里手动触发下载。需要离线使用可以下载带 `-Full` 后缀的完整包（自带完整版 FFmpeg），或把 `ffmpeg.exe` 放到游戏目录的 `ffmpeg` 文件夹。
 
 ## 使用
 
@@ -51,6 +51,14 @@
 - **码率填 0（默认）**：按 CRF 控制画质，数字越小越清晰、文件越大，18 基本看不出损失。
 - **填写码率**：按目标码率编码（可变码率）。
 - **恒定比特率（CBR）**：在高级设置里打开，码率尽量保持恒定，适合对码率有要求的平台。
+
+## 版本更新
+
+启动后会在后台检查一次新版本（失败静默，不弹错），**只提示，不下载、不替换**：
+
+- UMM 模组列表里名称后面会出现 `[有新版本 x.y.z]`，UMM 也会显示“可用更新”标记；
+- Web 设置页顶部显示新版本号和两个入口：「在 Aurora 中更新」「打开下载页」；
+- 实际更新请用 UMM 或 Aurora 完成。
 
 ## 常见问题
 
