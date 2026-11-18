@@ -14,13 +14,24 @@
 - 《冰与火之舞》（ADOFAI）
 - Unity Mod Manager 0.27.0 或更新版本
 
-### 安装步骤
+### 使用 UMM 安装
 
 1. 安装 [Unity Mod Manager](https://www.nexusmods.com/site/mods/21)，并为 ADOFAI 启用。
-2. 前往 [Releases](https://github.com/adofaiex/ADOFAI.EditorTweaks.ChartRendering/releases) 下载对应版本的安装包。
-3. 将压缩包解压到游戏目录的 `Mods\` 文件夹，确认最终目录为 `Mods\ADOFAI.EditorTweaks.ChartRendering\`。
+2. 打开 UMM 的 Installer 或 Mods 页面，把下载的 zip **直接拖到「Drop zip files here」区域**（也可以点「Install Mod」选择文件）。
+3. 确认 Mod 列表中出现 `ADOFAI Editor Tweaks - Chart Rendering`，并处于启用状态。
 
-升级时直接覆盖旧版本即可。建议在升级前备份原有 Mod 文件夹。
+### 使用 Aurora 安装（推荐）
+
+推荐使用 [Aurora](https://github.com/lishangi688/adofai-aurora) 管理 Mod，安装和更新都更方便：
+
+- **在线安装**：打开 Aurora → 左侧「在线 Mod」→ 数据源选择 `ADOFAITools` → 搜索本 Mod → 选择版本 → 点「安装」。
+- **本地安装**：打开 Aurora → 左侧「已安装」→ 右上角「安装本地 zip」→ 选择下载的 zip。
+
+Aurora 会处理解压、覆盖和版本记录，后续也可以直接用它检查更新。
+
+### 手动安装
+
+把压缩包解压到游戏目录的 `Mods\` 文件夹，确认最终目录为 `Mods\ADOFAI.EditorTweaks.ChartRendering\`。升级时直接覆盖旧版本即可，建议在升级前备份原有 Mod 文件夹。
 
 ### FFmpeg
 
@@ -29,7 +40,7 @@ AETC 使用 FFmpeg 进行视频编码和音频合成。1.1.1 起，提供主包�
 | 版本 | 下载体积 | FFmpeg 准备方式 |
 |---|---:|---|
 | 主包 | 约 0.3 MB | 首次使用时自动下载 |
-| `-Full` 完整包 | 约 86 MB | 已内置完整版 FFmpeg |
+| `-Full` 完整包 | 约 88 MB | 已内置完整版 FFmpeg |
 
 主包首次渲染前会自动下载 AETC 定制版 FFmpeg：
 
