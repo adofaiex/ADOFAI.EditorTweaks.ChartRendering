@@ -479,7 +479,7 @@ function FfmpegNotice({ ffmpeg, disabled, onInstall, onInstallFull }: { ffmpeg: 
     ? (ffmpeg.message || "请检查网络后重试，或手动安装 FFmpeg。")
     : busy
       ? `${ffmpeg.status === "installing" ? "正在安装" : ffmpeg.status === "verifying" ? "正在校验" : "正在下载"} ${percent}%（${megabytes(ffmpeg.downloadedBytes)} / ${megabytes(ffmpeg.totalBytes)} MB，安装后约 ${megabytes(ffmpeg.installedBytes)} MB，来源 ${ffmpeg.source || "准备中"}）`
-      : `需要安装 FFmpeg。定制版：下载约 12.7 MB，安装后约 44.2 MB；完整版：下载约 84.0 MB，安装后约 217.3 MB。首次渲染会自动下载定制版，遇到编码兼容问题可以改用完整版。`;
+      : `需要安装 FFmpeg。定制版：下载约 12.7 MB，安装后约 44.2 MB；完整版：下载约 84.0 MB，安装后约 217.3 MB。开始渲染时会自动下载定制版；也可以现在手动选择。`;
   return (
     <div className={`ffmpeg-notice ${failed ? "is-error" : ""}`} role="status">
       <IconDown />
@@ -491,7 +491,7 @@ function FfmpegNotice({ ffmpeg, disabled, onInstall, onInstallFull }: { ffmpeg: 
       {!busy ? (
         <div className="ffmpeg-notice-actions">
           <button type="button" onClick={onInstall} disabled={disabled}>{failed ? "重试定制版" : "下载定制版"}</button>
-          <button type="button" className="is-secondary" onClick={onInstallFull} disabled={disabled}>完整版</button>
+          <button type="button" className="is-secondary" onClick={onInstallFull} disabled={disabled}>下载完整版</button>
         </div>
       ) : null}
     </div>
