@@ -14,32 +14,28 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         // Main thread, once per frame from ModEntry.OnUpdate.
         public static void Update(UnityModManager.ModEntry entry)
         {
-            string suffix;
+            string suffix = string.Empty;
             if (ChartFfmpegInstaller.IsBusy)
             {
                 int percent = (int)Math.Round(ChartFfmpegInstaller.Progress * 100f);
-                suffix = "⏳ FFmpeg 下载中 " + percent + "%";
+                suffix = "[>] FFmpeg 下载中 " + percent + "%";
             }
             else if (!ChartFfmpegInstaller.IsReady)
             {
                 int countdown = ChartFfmpegInstaller.CountdownSeconds;
                 if (countdown >= 0)
                 {
-                    suffix = "⚠ 缺少 FFmpeg，" + countdown + " 秒后下载";
+                    suffix = "[>] " + countdown + " 秒后下载 FFmpeg";
                 }
-                else
+                else if (ChartFfmpegInstaller.Status == "failed")
                 {
-                    suffix = ChartFfmpegInstaller.Status == "failed" ? "⚠ FFmpeg 下载失败" : "⚠ 缺少 FFmpeg";
+                    suffix = "[!] FFmpeg 下载失败";
                 }
-            }
-            else
-            {
-                suffix = string.Empty;
             }
 
             if (ChartUpdateChecker.IsAvailable)
             {
-                string updateSuffix = "↑ 有新版本 " + ChartUpdateChecker.Latest;
+                string updateSuffix = "[^] 有新版本 " + ChartUpdateChecker.Latest;
                 suffix = suffix.Length == 0 ? updateSuffix : suffix + "  " + updateSuffix;
             }
 

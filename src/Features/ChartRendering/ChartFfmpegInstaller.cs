@@ -118,8 +118,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 }
 
                 countdownActive = true;
-                countdownDeadlineUtc = DateTime.UtcNow.AddSeconds(3);
-                countdownSeconds = 3;
+                countdownDeadlineUtc = DateTime.UtcNow.AddSeconds(5);
+                countdownSeconds = 5;
             }
 
             MarkChanged();

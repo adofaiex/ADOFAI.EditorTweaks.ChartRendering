@@ -502,7 +502,7 @@ function FfmpegNotice({ ffmpeg, disabled, countdown, onCancelAuto, onInstall, on
       ? `${ffmpeg.status === "installing" ? "正在安装" : ffmpeg.status === "verifying" ? "正在校验" : "正在下载"} ${percent}%（${megabytes(ffmpeg.downloadedBytes)} / ${megabytes(ffmpeg.totalBytes)} MB，安装后约 ${megabytes(ffmpeg.installedBytes)} MB，来源 ${ffmpeg.source || "准备中"}）`
       : counting
         ? `${countdown} 秒后自动下载定制版（下载约 12.7 MB，安装后约 44.2 MB）。不需要的话可以取消；也可以直接选完整版（下载约 84.0 MB，安装后约 217.3 MB）。`
-        : `需要安装 FFmpeg。定制版：下载约 12.7 MB，安装后约 44.2 MB；完整版：下载约 84.0 MB，安装后约 217.3 MB。开始渲染时会自动下载定制版；也可以现在手动选择。`;
+        : `需要安装 FFmpeg。定制版：下载约 12.7 MB，安装后约 44.2 MB；完整版：下载约 84.0 MB，安装后约 217.3 MB。游戏启动后会自动下载定制版；也可以现在手动选择。`;
   return (
     <div className={`ffmpeg-notice ${failed ? "is-error" : busy ? "is-busy" : ""}`} role="status">
       <IconDown />

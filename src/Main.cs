@@ -60,6 +60,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering
                 ChartRenderQuitGuard.Install();
                 // Background probe when nothing is saved yet or the GPU / FFmpeg changed.
                 ChartEncoderCapabilities.EnsureCurrent();
+                // Give missing FFmpeg five seconds before starting the download on its own.
+                ChartFfmpegInstaller.RequestCountdown();
             }
             else
             {
