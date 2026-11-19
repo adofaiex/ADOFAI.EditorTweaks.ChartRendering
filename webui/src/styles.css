@@ -49,6 +49,9 @@ button { cursor: pointer; }
 .ffmpeg-notice > svg { flex: none; margin-top: 3px; color: var(--warning); font-size: 18px; }
 .ffmpeg-notice.is-error { background: rgba(58, 12, 24, 0.92); border-color: var(--danger); }
 .ffmpeg-notice.is-error > svg { color: var(--danger); }
+.ffmpeg-notice.is-busy { background: rgba(8, 42, 58, 0.92); border-color: var(--accent-soft); }
+.ffmpeg-notice.is-busy > svg { color: var(--accent); }
+.ffmpeg-notice.is-busy .ffmpeg-notice-body strong { color: var(--accent); }
 .ffmpeg-notice-body { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
 .ffmpeg-notice-body strong { color: var(--warning); font-size: 14px; }
 .ffmpeg-notice.is-error .ffmpeg-notice-body strong { color: var(--danger); }

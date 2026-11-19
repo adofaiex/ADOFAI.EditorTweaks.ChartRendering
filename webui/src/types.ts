@@ -121,6 +121,7 @@ export interface FfmpegState {
   downloadedBytes: number;
   totalBytes: number;
   installedBytes: number;
+  countdown: number;
   source: string;
   message: string;
   path: string;

@@ -77,9 +77,24 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private static int sourceIndex;
         private static int changeCount;
         private static int pendingDetection;
+        private static bool countdownActive;
+        private static DateTime countdownDeadlineUtc;
+        private static int countdownSeconds = -1;
+        private static bool autoDownloadCancelled;
 
         // Main thread reads this to decide whether to push a new state to the settings page.
         public static int ChangeCount => Volatile.Read(ref changeCount);
+
+        public static int CountdownSeconds
+        {
+            get
+            {
+                lock (Sync)
+                {
+                    return countdownSeconds;
+                }
+            }
+        }
 
         // Set after a successful install so the main thread can re-probe encoders.
         public static bool TakePendingDetection()
@@ -90,6 +105,76 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private static void MarkChanged()
         {
             Interlocked.Increment(ref changeCount);
+        }
+
+        // Called when the Web settings page connects. Gives the user three seconds to cancel.
+        public static void RequestCountdown()
+        {
+            lock (Sync)
+            {
+                if (IsReady || running || countdownActive || autoDownloadCancelled)
+                {
+                    return;
+                }
+
+                countdownActive = true;
+                countdownDeadlineUtc = DateTime.UtcNow.AddSeconds(3);
+                countdownSeconds = 3;
+            }
+
+            MarkChanged();
+        }
+
+        public static void CancelCountdown()
+        {
+            lock (Sync)
+            {
+                countdownActive = false;
+                countdownSeconds = -1;
+                autoDownloadCancelled = true;
+            }
+
+            MarkChanged();
+        }
+
+        // Main thread, once per frame.
+        public static void TickCountdown()
+        {
+            bool start = false;
+            bool changed = false;
+            lock (Sync)
+            {
+                if (!countdownActive)
+                {
+                    return;
+                }
+
+                double remaining = (countdownDeadlineUtc - DateTime.UtcNow).TotalSeconds;
+                int seconds = (int)Math.Ceiling(Math.Max(0.0, remaining));
+                if (seconds != countdownSeconds)
+                {
+                    countdownSeconds = seconds;
+                    changed = true;
+                }
+
+                if (remaining <= 0.0)
+                {
+                    countdownActive = false;
+                    countdownSeconds = -1;
+                    changed = true;
+                    start = true;
+                }
+            }
+
+            if (changed)
+            {
+                MarkChanged();
+            }
+
+            if (start)
+            {
+                Start("countdown after opening the settings page");
+            }
         }
 
         public static string TargetPath
@@ -156,6 +241,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 sourceName = string.Empty;
                 installedVariant = string.Empty;
                 sourceIndex = 0;
+                countdownActive = false;
+                countdownSeconds = -1;
                 worker = new Thread(() => DownloadLoop(reason, preferFull))
                 {
                     IsBackground = true,
@@ -202,6 +289,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     ["downloadedBytes"] = downloadedBytes,
                     ["totalBytes"] = totalBytes,
                     ["installedBytes"] = installedBytes,
+                    ["countdown"] = countdownSeconds,
                     ["source"] = sourceName,
                     ["message"] = message,
                     ["path"] = TargetPath,

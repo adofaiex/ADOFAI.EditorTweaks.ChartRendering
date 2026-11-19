@@ -139,6 +139,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             }
 
             // The FFmpeg downloader runs on its own thread; push its progress to the page.
+            ChartFfmpegInstaller.TickCountdown();
             int ffmpegChanges = ChartFfmpegInstaller.ChangeCount;
             if (ffmpegChanges != lastFfmpegChangeCount)
             {
@@ -538,6 +539,13 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                         return StateResult();
                     }, context);
                     return;
+                case "/api/ffmpeg/cancel-auto":
+                    ExecuteOnMain(() =>
+                    {
+                        ChartFfmpegInstaller.CancelCountdown();
+                        return StateResult();
+                    }, context);
+                    return;
                 default:
                     WriteJson(context, 404, Error("Unknown WebUI API route."));
                     return;
@@ -560,6 +568,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             try
             {
                 Main.Log("[WebUI] SSE client connected.");
+                // Opening the settings page starts the 3 second FFmpeg countdown (if it is missing).
+                ChartFfmpegInstaller.RequestCountdown();
                 using (StreamWriter writer = new StreamWriter(context.Response.OutputStream, new UTF8Encoding(false), 1024, true))
                 {
                     writer.AutoFlush = true;

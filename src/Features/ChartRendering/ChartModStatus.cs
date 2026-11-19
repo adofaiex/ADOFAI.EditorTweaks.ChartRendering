@@ -18,11 +18,19 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             if (ChartFfmpegInstaller.IsBusy)
             {
                 int percent = (int)Math.Round(ChartFfmpegInstaller.Progress * 100f);
-                suffix = "[FFmpeg 下载中 " + percent + "%]";
+                suffix = "⏳ FFmpeg 下载中 " + percent + "%";
             }
             else if (!ChartFfmpegInstaller.IsReady)
             {
-                suffix = ChartFfmpegInstaller.Status == "failed" ? "[FFmpeg 下载失败]" : "[缺少 FFmpeg]";
+                int countdown = ChartFfmpegInstaller.CountdownSeconds;
+                if (countdown >= 0)
+                {
+                    suffix = "⚠ 缺少 FFmpeg，" + countdown + " 秒后下载";
+                }
+                else
+                {
+                    suffix = ChartFfmpegInstaller.Status == "failed" ? "⚠ FFmpeg 下载失败" : "⚠ 缺少 FFmpeg";
+                }
             }
             else
             {
@@ -31,8 +39,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
             if (ChartUpdateChecker.IsAvailable)
             {
-                string updateSuffix = "[有新版本 " + ChartUpdateChecker.Latest + "]";
-                suffix = suffix.Length == 0 ? updateSuffix : suffix + " " + updateSuffix;
+                string updateSuffix = "↑ 有新版本 " + ChartUpdateChecker.Latest;
+                suffix = suffix.Length == 0 ? updateSuffix : suffix + "  " + updateSuffix;
             }
 
             string text = suffix.Length == 0 ? BaseName : BaseName + "  " + suffix;

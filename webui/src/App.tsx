@@ -174,8 +174,6 @@ function App() {
   const [state, setState] = React.useState<WebUiState>(() => createMockState());
   const [page, setPage] = React.useState<PageKey>("overview");
   const [loading, setLoading] = React.useState(true);
-  const [autoDownloadSeconds, setAutoDownloadSeconds] = React.useState<number | null>(null);
-  const autoDownloadCancelled = React.useRef(false);
   const [connected, setConnected] = React.useState(false);
   const [reconnecting, setReconnecting] = React.useState(false);
   const [connectionReload, setConnectionReload] = React.useState(0);
@@ -372,40 +370,6 @@ function App() {
     }
   };
 
-  React.useEffect(() => {
-    if (state.ffmpeg.status !== "missing") {
-      autoDownloadCancelled.current = false;
-      setAutoDownloadSeconds(null);
-      return;
-    }
-
-    if (demoMode || !connected || autoDownloadCancelled.current) {
-      setAutoDownloadSeconds(null);
-      return;
-    }
-
-    setAutoDownloadSeconds((current) => (current == null ? 3 : current));
-  }, [state.ffmpeg.status, demoMode, connected]);
-
-  React.useEffect(() => {
-    if (autoDownloadSeconds == null) {
-      return;
-    }
-
-    if (autoDownloadSeconds <= 0) {
-      setAutoDownloadSeconds(null);
-      autoDownloadCancelled.current = true;
-      void runAction("/api/ffmpeg/install", { variant: "custom" });
-      return;
-    }
-
-    const timer = window.setTimeout(
-      () => setAutoDownloadSeconds((value) => (value == null ? null : value - 1)),
-      1000,
-    );
-    return () => window.clearTimeout(timer);
-  }, [autoDownloadSeconds]);
-
   const openDocument = (path: string) => {
     if (localPreview) {
       Message.info("本地预览没有连接 Mod 服务，帮助页面无法打开。");
@@ -480,11 +444,8 @@ function App() {
             <FfmpegNotice
               ffmpeg={state.ffmpeg}
               disabled={state.render.active}
-              countdown={autoDownloadSeconds}
-              onCancelAuto={() => {
-                autoDownloadCancelled.current = true;
-                setAutoDownloadSeconds(null);
-              }}
+              countdown={state.ffmpeg.countdown >= 0 ? state.ffmpeg.countdown : null}
+              onCancelAuto={() => runAction("/api/ffmpeg/cancel-auto")}
               onInstall={() => runAction("/api/ffmpeg/install", { variant: "custom" })}
               onInstallFull={() => runAction("/api/ffmpeg/install", { variant: "full" })}
             />
@@ -543,7 +504,7 @@ function FfmpegNotice({ ffmpeg, disabled, countdown, onCancelAuto, onInstall, on
         ? `${countdown} 秒后自动下载定制版（下载约 12.7 MB，安装后约 44.2 MB）。不需要的话可以取消；也可以直接选完整版（下载约 84.0 MB，安装后约 217.3 MB）。`
         : `需要安装 FFmpeg。定制版：下载约 12.7 MB，安装后约 44.2 MB；完整版：下载约 84.0 MB，安装后约 217.3 MB。开始渲染时会自动下载定制版；也可以现在手动选择。`;
   return (
-    <div className={`ffmpeg-notice ${failed ? "is-error" : ""}`} role="status">
+    <div className={`ffmpeg-notice ${failed ? "is-error" : busy ? "is-busy" : ""}`} role="status">
       <IconDown />
       <div className="ffmpeg-notice-body">
         <strong>{title}</strong>

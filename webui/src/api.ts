@@ -103,6 +103,7 @@ export function createMockState(): WebUiState {
       downloadedBytes: 13279311,
       totalBytes: 13279311,
       installedBytes: 46367232,
+      countdown: -1,
       source: "ADOFAITools",
       message: "",
       path: "Mods/ADOFAI.EditorTweaks.ChartRendering/ThirdParty/FFmpeg/ffmpeg.exe",
