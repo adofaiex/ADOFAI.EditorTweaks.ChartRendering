@@ -46,6 +46,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
         private string latestStateJson = "{}";
         private ChartRenderTask? renderTask;
         private int lastEncoderChangeCount = -1;
+        private int lastFfmpegChangeCount = -1;
+        private int lastUpdateChangeCount = -1;
         private Coroutine? openSettingsPageRoutine;
         private float nextStateBroadcastTime;
         private bool stateDirty = true;
@@ -56,6 +58,17 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
         public static bool LanEnabled => instance != null && instance.lanProxy != null;
 
         public static string LanUrl => instance?.lanUrl ?? string.Empty;
+
+        // Main thread (the UMM settings panel). Same flow as the open-page hotkey.
+        public static void OpenFromModMenu()
+        {
+            if (instance == null || instance.openSettingsPageRoutine != null)
+            {
+                return;
+            }
+
+            instance.openSettingsPageRoutine = instance.StartCoroutine(instance.OpenSettingsPageRoutine());
+        }
 
         public static IReadOnlyList<string> LanUrls =>
             instance != null ? (IReadOnlyList<string>)instance.lanUrls : Array.Empty<string>();
@@ -122,6 +135,29 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             if (encoderChanges != lastEncoderChangeCount)
             {
                 lastEncoderChangeCount = encoderChanges;
+                stateDirty = true;
+            }
+
+            // The FFmpeg downloader runs on its own thread; push its progress to the page.
+            int ffmpegChanges = ChartFfmpegInstaller.ChangeCount;
+            if (ffmpegChanges != lastFfmpegChangeCount)
+            {
+                lastFfmpegChangeCount = ffmpegChanges;
+                stateDirty = true;
+            }
+
+            if (ChartFfmpegInstaller.TakePendingDetection())
+            {
+                ChartEncoderCapabilities.StartDetection();
+                stateDirty = true;
+            }
+
+            ChartUpdateChecker.StartIfDue();
+            ChartUpdateChecker.ApplyToMainThread();
+            int updateChanges = ChartUpdateChecker.ChangeCount;
+            if (updateChanges != lastUpdateChangeCount)
+            {
+                lastUpdateChangeCount = updateChanges;
                 stateDirty = true;
             }
 
@@ -484,6 +520,21 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                         }
 
                         ChartEncoderCapabilities.StartDetection();
+                        return StateResult();
+                    }, context);
+                    return;
+                case "/api/ffmpeg/install":
+                    ExecuteOnMain(() =>
+                    {
+                        if (ChartRenderService.IsActive)
+                        {
+                            return new CommandResult(409, Error("渲染进行中，FFmpeg 会在开始渲染前自动准备。"));
+                        }
+
+                        bool preferFull = body.TryGetValue("variant", out object variant)
+                            && variant is string name
+                            && string.Equals(name, "full", StringComparison.OrdinalIgnoreCase);
+                        ChartFfmpegInstaller.Start("requested from the settings page", preferFull);
                         return StateResult();
                     }, context);
                     return;

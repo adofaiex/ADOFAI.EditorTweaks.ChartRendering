@@ -152,6 +152,33 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             return available.Value;
         }
 
+        // Any thread. Drops live probe results for a path, e.g. after FFmpeg was downloaded or replaced.
+        public static void InvalidateSessionProbes(string ffmpegPath)
+        {
+            if (string.IsNullOrEmpty(ffmpegPath))
+            {
+                return;
+            }
+
+            string prefix = ffmpegPath + "|";
+            lock (Sync)
+            {
+                List<string> stale = new List<string>();
+                foreach (string key in sessionProbes.Keys)
+                {
+                    if (key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        stale.Add(key);
+                    }
+                }
+
+                foreach (string key in stale)
+                {
+                    sessionProbes.Remove(key);
+                }
+            }
+        }
+
         // Main thread. Writes changed results into the settings file.
         public static bool FlushIfDirty()
         {

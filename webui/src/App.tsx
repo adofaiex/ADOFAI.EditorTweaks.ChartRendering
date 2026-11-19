@@ -23,7 +23,7 @@ import {
 } from "@arco-design/web-react/icon";
 import React from "react";
 import { createEventSource, createMockState, isLocalPreview, localDocumentUrl, postJson } from "./api";
-import type { EncoderState, PageKey, PatchStatus, RenderState, SettingsState, WebUiState } from "./types";
+import type { EncoderState, FfmpegState, PageKey, PatchStatus, RenderState, SettingsState, UpdateState, WebUiState } from "./types";
 
 const pageItems: Array<{ key: PageKey; label: string; description: string; icon: React.ReactNode }> = [
   { key: "overview", label: "总览", description: "兼容性与全部功能状态", icon: <IconApps /> },
@@ -174,6 +174,8 @@ function App() {
   const [state, setState] = React.useState<WebUiState>(() => createMockState());
   const [page, setPage] = React.useState<PageKey>("overview");
   const [loading, setLoading] = React.useState(true);
+  const [autoDownloadSeconds, setAutoDownloadSeconds] = React.useState<number | null>(null);
+  const autoDownloadCancelled = React.useRef(false);
   const [connected, setConnected] = React.useState(false);
   const [reconnecting, setReconnecting] = React.useState(false);
   const [connectionReload, setConnectionReload] = React.useState(0);
@@ -355,20 +357,54 @@ function App() {
     }
   };
 
-  const runAction = async (path: string) => {
+  const runAction = async (path: string, body?: unknown) => {
     if (demoMode) {
       Message.success("演示状态：操作已完成");
       return;
     }
 
     try {
-      const response = await postJson<{ state: WebUiState }>(path);
+      const response = await postJson<{ state: WebUiState }>(path, body ?? {});
       if (response.state) setState(response.state);
       Message.success("操作已完成");
     } catch (error) {
       Message.error(error instanceof Error ? error.message : "操作失败");
     }
   };
+
+  React.useEffect(() => {
+    if (state.ffmpeg.status !== "missing") {
+      autoDownloadCancelled.current = false;
+      setAutoDownloadSeconds(null);
+      return;
+    }
+
+    if (demoMode || !connected || autoDownloadCancelled.current) {
+      setAutoDownloadSeconds(null);
+      return;
+    }
+
+    setAutoDownloadSeconds((current) => (current == null ? 3 : current));
+  }, [state.ffmpeg.status, demoMode, connected]);
+
+  React.useEffect(() => {
+    if (autoDownloadSeconds == null) {
+      return;
+    }
+
+    if (autoDownloadSeconds <= 0) {
+      setAutoDownloadSeconds(null);
+      autoDownloadCancelled.current = true;
+      void runAction("/api/ffmpeg/install", { variant: "custom" });
+      return;
+    }
+
+    const timer = window.setTimeout(
+      () => setAutoDownloadSeconds((value) => (value == null ? null : value - 1)),
+      1000,
+    );
+    return () => window.clearTimeout(timer);
+  }, [autoDownloadSeconds]);
 
   const openDocument = (path: string) => {
     if (localPreview) {
@@ -439,6 +475,20 @@ function App() {
         </aside>
 
         <main className="main-content">
+          {state.update.status === "available" ? <UpdateNotice update={state.update} /> : null}
+          {state.ffmpeg.status !== "ready" ? (
+            <FfmpegNotice
+              ffmpeg={state.ffmpeg}
+              disabled={state.render.active}
+              countdown={autoDownloadSeconds}
+              onCancelAuto={() => {
+                autoDownloadCancelled.current = true;
+                setAutoDownloadSeconds(null);
+              }}
+              onInstall={() => runAction("/api/ffmpeg/install", { variant: "custom" })}
+              onInstallFull={() => runAction("/api/ffmpeg/install", { variant: "full" })}
+            />
+          ) : null}
           {loading ? <div className="loading-state"><Spin size={32} /><span>正在连接 Mod 服务…</span></div> : null}
           {!loading && visibleRender ? (
             <RenderPage state={state} offline={!demoMode && !connected} onSettings={updateSettings} onOpenDocument={openDocument} onStart={() => renderAction("start")} onCancel={() => renderAction("cancel")} />
@@ -457,6 +507,59 @@ function App() {
         <span className="status-divider" />
         <span className="status-version">EDITOR TWEAKS {state.compatibility.modVersion}</span>
       </footer>
+    </div>
+  );
+}
+
+function UpdateNotice({ update }: { update: UpdateState }) {
+  const open = (url: string) => window.open(url, "_blank", "noopener");
+  return (
+    <div className="update-notice" role="status">
+      <IconCheckCircle />
+      <div className="update-notice-body">
+        <strong>发现新版本 {update.latest}</strong>
+        <span>当前版本 {update.current}。推荐用 Aurora 更新，也可以在资源站或 GitHub 下载新包；更新由 UMM / Aurora 完成。</span>
+      </div>
+      <div className="update-notice-actions">
+        <button type="button" onClick={() => open(update.auroraUrl)}>在 Aurora 中更新</button>
+        <button type="button" className="is-secondary" onClick={() => open(update.url)}>打开下载页</button>
+      </div>
+    </div>
+  );
+}
+
+function FfmpegNotice({ ffmpeg, disabled, countdown, onCancelAuto, onInstall, onInstallFull }: { ffmpeg: FfmpegState; disabled: boolean; countdown: number | null; onCancelAuto: () => void; onInstall: () => void; onInstallFull: () => void }) {
+  const percent = Math.round(Math.max(0, Math.min(1, ffmpeg.progress)) * 100);
+  const megabytes = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1);
+  const busy = ffmpeg.status === "downloading" || ffmpeg.status === "verifying" || ffmpeg.status === "installing";
+  const failed = ffmpeg.status === "failed";
+  const counting = countdown != null && !busy && !failed;
+  const title = failed ? "FFmpeg 自动下载失败" : busy ? "正在准备 FFmpeg" : counting ? "即将自动下载 FFmpeg" : "需要安装 FFmpeg";
+  const detail = failed
+    ? (ffmpeg.message || "请检查网络后重试，或手动安装 FFmpeg。")
+    : busy
+      ? `${ffmpeg.status === "installing" ? "正在安装" : ffmpeg.status === "verifying" ? "正在校验" : "正在下载"} ${percent}%（${megabytes(ffmpeg.downloadedBytes)} / ${megabytes(ffmpeg.totalBytes)} MB，安装后约 ${megabytes(ffmpeg.installedBytes)} MB，来源 ${ffmpeg.source || "准备中"}）`
+      : counting
+        ? `${countdown} 秒后自动下载定制版（下载约 12.7 MB，安装后约 44.2 MB）。不需要的话可以取消；也可以直接选完整版（下载约 84.0 MB，安装后约 217.3 MB）。`
+        : `需要安装 FFmpeg。定制版：下载约 12.7 MB，安装后约 44.2 MB；完整版：下载约 84.0 MB，安装后约 217.3 MB。开始渲染时会自动下载定制版；也可以现在手动选择。`;
+  return (
+    <div className={`ffmpeg-notice ${failed ? "is-error" : ""}`} role="status">
+      <IconDown />
+      <div className="ffmpeg-notice-body">
+        <strong>{title}</strong>
+        <span>{detail}</span>
+        {busy ? <div className="ffmpeg-progress"><div style={{ width: `${percent}%` }} /></div> : null}
+      </div>
+      {!busy ? (
+        <div className="ffmpeg-notice-actions">
+          <button type="button" onClick={onInstall} disabled={disabled}>{failed ? "重试定制版" : counting ? "立即下载" : "下载定制版"}</button>
+          {counting ? (
+            <button type="button" className="is-secondary" onClick={onCancelAuto} disabled={disabled}>取消自动下载</button>
+          ) : (
+            <button type="button" className="is-secondary" onClick={onInstallFull} disabled={disabled}>下载完整版</button>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

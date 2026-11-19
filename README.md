@@ -1,102 +1,260 @@
 # ADOFAI Editor Tweaks - Chart Rendering
 
-《冰与火之舞》（A Dance of Fire and Ice）的谱面视频渲染 Mod：在编辑器里一键把谱面渲染成视频，画面和音乐逐帧对齐，不受电脑卡顿影响。
+《冰与火之舞》（A Dance of Fire and Ice）的谱面视频渲染 Mod。可以在编辑器中将谱面直接渲染为视频，使画面与音乐逐帧对齐，不受电脑实时运行时的卡顿影响。
 
-原作者 lizi（memsys-lizi），现由离殇i 维护。部分功能移植自 sui 的 CheryTools AET Recorder（经作者同意）。
+原作者：lizi（memsys-lizi）  
+现维护者：离殇i
+
+部分功能移植自 sui 的 CheryTools AET Recorder，已获得作者同意。
 
 ## 安装
 
-1. 安装 [Unity Mod Manager](https://www.nexusmods.com/site/mods/21)（0.27.0 或更新），并为游戏启用。
-2. 下载 [Releases](https://github.com/adofaiex/ADOFAI.EditorTweaks.ChartRendering/releases) 里的 `ADOFAI.EditorTweaks.ChartRendering-版本号.zip`。
-3. 解压到游戏目录的 `Mods\` 下，得到 `Mods\ADOFAI.EditorTweaks.ChartRendering\`。升级时直接覆盖。
+### 环境要求
 
-安装包已经自带 FFmpeg，不需要另外下载。
+- 《冰与火之舞》（ADOFAI）
+- Unity Mod Manager 0.27.0 或更新版本
+
+### 使用 UMM 安装
+
+1. 安装 [Unity Mod Manager](https://www.nexusmods.com/site/mods/21)，并为 ADOFAI 启用。
+2. 打开 UMM 的 Installer 或 Mods 页面，把下载的 zip **直接拖到「Drop zip files here」区域**（也可以点「Install Mod」选择文件）。
+3. 确认 Mod 列表中出现 `ADOFAI Editor Tweaks - Chart Rendering`，并处于启用状态。
+
+### 使用 Aurora 安装（推荐）
+
+推荐使用 [Aurora](https://github.com/lishangi688/adofai-aurora) 管理 Mod，安装和更新都更方便：
+
+- **在线安装**：打开 Aurora → 左侧「在线 Mod」→ 数据源选择 `ADOFAITools` → 搜索本 Mod → 选择版本 → 点「安装」。
+- **本地安装**：打开 Aurora → 左侧「已安装」→ 右上角「安装本地 zip」→ 选择下载的 zip。
+
+Aurora 会处理解压、覆盖和版本记录，后续也可以直接用它检查更新。
+
+### 手动安装
+
+把压缩包解压到游戏目录的 `Mods\` 文件夹，确认最终目录为 `Mods\ADOFAI.EditorTweaks.ChartRendering\`。升级时直接覆盖旧版本即可，建议在升级前备份原有 Mod 文件夹。
+
+### FFmpeg
+
+AETC 使用 FFmpeg 进行视频编码和音频合成。1.1.1 起，提供主包和完整包两种分发方式：
+
+| 版本 | 下载体积 | FFmpeg 准备方式 |
+|---|---:|---|
+| 主包 | 约 0.3 MB | 首次使用时自动下载 |
+| `-Full` 完整包 | 约 88 MB | 已内置完整版 FFmpeg |
+
+主包首次渲染前会自动下载 AETC 定制版 FFmpeg：
+
+- **定制版：** 下载约 13 MB，安装后约 44 MB。仅保留 AETC 渲染所需的编码器、封装器和滤镜。
+- **完整版：** 下载约 84 MB，安装后约 217 MB。作为定制版不可用或出现编码兼容问题时的备用方案。
+
+自动下载顺序为：
+
+1. ADOFAITools 定制版
+2. GitHub 定制版
+3. ADOFAITools 完整版
+4. GitHub 完整版
+
+所有下载源都会进行 SHA256 校验。
+
+打开 Web 设置页面时，也会倒计时 3 秒后自动开始 FFmpeg 准备，可以在倒计时期间取消。UMM 模组列表和 AETC 的 UMM 设置面板会显示 FFmpeg 状态，并提供手动安装入口。
+
+如果下载失败，可以重试、手动放置 `ffmpeg.exe`，或在设置页面中填写自定义 FFmpeg 路径。
+
+需要离线使用时，建议下载 `-Full` 完整包；也可以将 `ffmpeg.exe` 放入游戏目录下的 `ffmpeg` 文件夹。
 
 ## 使用
 
-1. 启动游戏，打开编辑器并加载谱面。
-2. 按 **F8** 打开设置页（默认；快捷键可在 UMM 面板里改，也可以用 F9、Ctrl+Shift+U 等避免和编辑器快捷键冲突）。
-3. 在“谱面渲染”页设置分辨率、帧率、编码格式，点“开始渲染”。
-4. 渲染时游戏会自动播放谱面，进度显示在设置页里，随时可以取消。完成后视频保存在导出目录，游戏自动回到编辑器。
+### 开始渲染
 
-> 渲染期间请不要关闭游戏。合成阶段（进度 92% 以后）关闭会导致视频不完整；误点关闭时 Mod 会拦截一次。
+1. 启动游戏，进入编辑器并加载需要渲染的谱面。
+2. 按 **F8** 打开 AETC 设置页面。默认快捷键为 F8，也可以在 UMM 面板中修改。
+3. 在「谱面渲染」页面设置分辨率、帧率、编码格式等参数。
+4. 点击「开始渲染」。渲染过程中游戏会自动播放谱面，进度会显示在设置页面中。
+5. 渲染完成后，视频会保存到导出目录，游戏自动返回编辑器。
 
-### 画面捕获
+渲染过程中请尽量不要关闭游戏。尤其是进入音频合成阶段（进度 92% 以后），此时关闭游戏可能导致视频不完整。误触关闭时，Mod 会拦截第一次关闭操作并给出提示。
 
-- **摄像机渲染（推荐）**：只录谱面画面，最稳定。
-- **游戏画面渲染**：包含游戏内界面、按键显示 Mod 和额外摄像机效果。有两种捕获方式：
-  - **离屏渲染（默认）**：可以输出高于显示器的分辨率（例如 2K、4K），屏幕上只显示预览；
-  - **最终屏幕捕获**：直接截取游戏窗口，分辨率跟随窗口大小，用于离屏渲染画面有问题时对照。
+### 画面捕获方式
 
-### 按键显示 Mod
+AETC 提供摄像机渲染和游戏画面渲染两种模式。
 
-游戏画面模式下，JipperResourcePack（JRP）、JipperKeyViewer（JKV）和 Quartz 的雨键、KPS 和按键动画会跟随视频时间，速度和游戏里一致（CheryTools 自带适配）。设置里的“兼容其他按键显示 Mod（实验性）”默认开启。
+- **摄像机渲染：** 只捕获谱面画面，适合制作常规谱面演示视频。
+- **游戏画面渲染：** 捕获游戏窗口中的画面，可以包含游戏内界面、第三方按键显示 Mod 和额外摄像机效果。
 
-按键要由真实输入或 Creplay 等回放提供；AETC 自带的自动补打不会让按键显示 Mod 显示按键。
+游戏画面模式提供两种捕获方式：
+
+- **离屏渲染（默认）：** 支持输出高于显示器分辨率的视频，例如 2K、4K；渲染时屏幕只显示预览。
+- **最终屏幕捕获：** 直接截取游戏窗口，输出分辨率跟随窗口大小。适合对照离屏渲染结果，或在离屏渲染出现问题时作为备用方案。
+
+### 第三方按键显示 Mod
+
+在游戏画面模式下，AETC 可以让部分第三方按键显示 Mod 的雨键、KPS 和按键动画跟随视频时间运行，避免渲染速度与实际时间不一致导致动画速度异常。
+
+目前支持：
+
+- JipperResourcePack（JRP）
+- JipperKeyViewer（JKV）
+- Quartz
+
+「兼容其他按键显示 Mod（实验性）」默认开启，可以在设置页面关闭。关闭后，行为与 1.1.0 一致。
+
+CheryTools 自带的按键显示有独立适配，不受此功能影响。
+
+**注意：**
+
+- 此功能只在游戏画面模式下生效，摄像机渲染不包含按键显示画面。
+- 按键需要由真实输入或 Creplay 等回放提供。
+- AETC 自带的自动补打功能不会触发第三方按键显示 Mod，因为它只知道命中了哪块砖，不知道实际按下的是哪个键。
+- 如果第三方 Mod 的内部实现发生变化，适配可能失效，但不会影响渲染本身。
 
 ### 编码格式怎么选
 
-| 格式 | 适合 | 说明 |
+| 格式 | 适用场景 | 说明 |
 |---|---|---|
-| H.264 | 上传视频网站、发给别人 | 兼容性最好，默认选项 |
-| HEVC / H.265 | 想要更小的文件 | 同画质体积更小，老设备可能放不了 |
-| AV1 | 体积最小 | RTX 40 / RDNA 3 / Intel Arc 及以上用显卡编码，更老的显卡用 CPU（较慢） |
-| ProRes 422 HQ | 导入剪辑软件再加工 | 文件很大，固定输出 MOV |
-| H.266 / VVC | 尝鲜 | **实验性，不推荐**：只能 CPU 编码，非常慢，大多数播放器打不开 |
+| H.264 | 上传视频网站、分享给他人 | 兼容性最好，默认选项 |
+| HEVC / H.265 | 希望减小文件体积 | 相近画质下通常体积更小，部分旧设备可能不支持 |
+| AV1 | 希望获得更高压缩效率 | 新款显卡可使用硬件编码，较旧显卡会使用 CPU 编码 |
+| ProRes 422 HQ | 导入剪辑软件进一步处理 | 文件较大，固定使用 MOV 容器 |
+| H.266 / VVC | 尝试新编码格式 | 实验性支持，仅 CPU 编码，速度非常慢，兼容性有限 |
 
-支持 NVIDIA、AMD、Intel 的显卡/核显硬件编码；没有可用的硬件编码器时自动改用 CPU。总览页可以看到这台电脑能用哪些编码器，渲染设置里会显示实际会用哪一个。
+支持 NVIDIA、AMD 和 Intel 显卡及核显的硬件编码。没有可用的硬件编码器时会回退到 CPU 编码。
 
-### 画质
+AV1 硬件编码需要 NVIDIA RTX 40 系、AMD RDNA 3、Intel Arc 或更新的显卡；较旧的显卡会使用 CPU 的 SVT-AV1 编码器。
 
-- **码率填 0（默认）**：按 CRF 控制画质，数字越小越清晰、文件越大，18 基本看不出损失。
-- **填写码率**：按目标码率编码（可变码率）。
-- **恒定比特率（CBR）**：在高级设置里打开，码率尽量保持恒定，适合对码率有要求的平台。
+总览页面可以查看设备支持的编码器，渲染设置页面会显示本次渲染实际使用的编码器。
+
+### 画质与码率
+
+AETC 提供 CRF、目标码率和 CBR 等设置：
+
+- **码率填写为 0（默认）：** 使用 CRF 模式控制画质。CRF 数值越小，画质越高，文件通常也越大。CRF 18 通常可以获得较高画质。
+- **填写目标码率：** 按指定码率进行编码，适合对输出码率有明确要求的场景。
+- **恒定比特率（CBR）：** 在高级设置中启用，适合需要尽量保持码率稳定的场景。
+
+CBR 的实际支持范围取决于编码器：NVIDIA 和 AMD 显卡编码支持真正的恒定比特率；CPU 编码只能近似恒定；H.266 不支持 CBR；ProRes 的码率由格式本身决定。
+
+### 编码器与速度预设
+
+在「详细编码设置」中，可以选择自动、显卡、CPU 或自定义编码器，并调整对应的速度预设：
+
+- 显卡编码提供 p1–p7。
+- CPU 编码提供 ultrafast–veryslow。
+
+通常可以优先使用默认的自动均衡设置。CPU 编码、慢速预设和 H.266 都可能显著增加渲染耗时。
+
+### 局域网访问
+
+AETC 提供实验性的局域网访问功能，默认关闭。
+
+开启后，同一局域网内的手机、平板等设备可以通过浏览器访问设置页面，查看渲染进度。
+
+访问地址包含控制令牌，请勿公开分享。该功能使用 HTTP，建议仅在可信任的局域网环境中使用。需要从外网访问时，建议使用 Tailscale、ZeroTier 等组网工具，不要直接将端口暴露到公网。
+
+## 版本更新
+
+AETC 启动后会在后台检查一次新版本。
+
+版本检查只负责提示，不会自动下载或替换文件：
+
+- UMM 模组列表中会显示 `[有新版本 x.y.z]`，UMM 也会显示「可用更新」标记。
+- AETC 的 UMM 设置面板会显示新版本信息。
+- Web 设置页面顶部会显示新版本提示，并提供「在 Aurora 中更新」和「打开下载页」入口。
+
+实际更新请通过 UMM 或 Aurora 完成。
 
 ## 常见问题
 
-**渲染很慢？**
-CPU 编码、慢速预设、H.266 都会明显拖慢渲染。优先使用默认的“自动均衡”档位，让显卡编码。
+**渲染速度很慢？**
+
+CPU 编码、较慢的编码预设以及 H.266 都会显著增加渲染时间。建议优先使用默认的自动均衡设置，并在设备支持时使用显卡硬件编码。
 
 **视频没有声音或音乐？**
-请先更新到最新版本。如果仍然出现，请附上日志反馈（见下）。
+
+请先确认使用的是最新版本。如果仍然出现问题，请在反馈时附上对应的渲染日志和游戏日志。
 
 **升级后视频体积和旧版不一样？**
-1.1.0 起码率为 0 时改为按画质（CRF）编码，体积会随画面复杂度变化。需要固定码率时填写码率或打开 CBR。
 
-**音频缓冲改大后，渲染完其他 Mod 的音效没了？**
-音频缓冲大于 256 时，渲染会临时切换音频设置，其他 Mod 自己加载的音效（例如 Creplay 的按键音）可能需要重新进入谱面才能恢复。
+从 1.1.0 开始，码率填写为 0 时改为使用 CRF 编码。最终体积会随画面复杂度变化。如果需要固定码率，可以填写目标码率或启用 CBR。
 
-**按键显示 Mod 的雨键速度不对，或者部分按键没有雨条？**
-确认用的是游戏画面渲染，并打开了“兼容其他按键显示 Mod”。反复开关按键显示 Mod 或来回切换捕获方式后偶尔会出现雨条缺失，重启游戏即可恢复。
+**渲染后其他 Mod 的音效消失了？**
 
-**帧率填 240 渲染失败？**
-帧率过高时每帧的音频不足一个音频缓冲，音频无法捕获。48 kHz 下上限约 187 帧/秒，渲染开始时会直接提示。
+当音频缓冲区大于 256 时，渲染会临时切换音频设置。其他 Mod 自行加载的音效（例如 Creplay 的按键音）可能需要重新进入谱面才能恢复。
+
+**第三方按键显示 Mod 的雨键速度不对，或者部分按键没有雨条？**
+
+确认使用的是游戏画面渲染，并开启了「兼容其他按键显示 Mod」。如果反复启用、关闭按键显示 Mod，或切换捕获方式后偶发雨条缺失，可以尝试重启游戏。
+
+**帧率设置为 240 后渲染失败？**
+
+音频捕获存在帧率上限。以 48 kHz 采样率、256 采样缓冲区为例，上限约为 187 帧/秒。超过上限时，AETC 会在渲染开始时提示。建议使用 120 或 180 FPS。
 
 **AMD / Intel 显卡编码报错？**
-在“详细编码设置”里把编码器改为 CPU 可以绕过，并请反馈显卡型号和驱动版本。
+
+可以在「详细编码设置」中将编码器改为 CPU，以绕过硬件编码问题。反馈时请附上显卡型号和驱动版本。
+
+**主包下载 FFmpeg 失败？**
+
+可以重试下载，或改用 `-Full` 完整包。也可以手动放置 `ffmpeg.exe`，或在设置页面中填写自定义路径。
+
+**离屏渲染画面异常？**
+
+可以尝试将捕获方式切换为「最终屏幕捕获」进行对照。需要输出 2K / 4K 分辨率时，仍建议使用离屏渲染。
 
 ## 反馈问题
 
-请在 [Issues](https://github.com/adofaiex/ADOFAI.EditorTweaks.ChartRendering/issues) 附上：
+如果遇到问题，请通过 [GitHub Issues](https://github.com/adofaiex/ADOFAI.EditorTweaks.ChartRendering/issues) 反馈，并尽可能附上以下信息：
 
-- 显卡型号、驱动版本、游戏版本，以及选择的编码格式和容器；
-- 渲染日志：`Mods\ADOFAI.EditorTweaks.ChartRendering\Workspace\Logs\` 里对应时间的 `render_*.log`；
-- 游戏日志：`%USERPROFILE%\AppData\LocalLow\7th Beat Games\A Dance of Fire and Ice\Player.log`；
-- 复现步骤。
+- 显卡型号、驱动版本和游戏版本。
+- 选择的编码格式、容器、分辨率和帧率。
+- 对应时间的渲染日志：`Mods\ADOFAI.EditorTweaks.ChartRendering\Workspace\Logs\render_*.log`。
+- 游戏日志：`%USERPROFILE%\AppData\LocalLow\7th Beat Games\A Dance of Fire and Ice\Player.log`。
+- 问题复现步骤。
+
+如果是第三方按键显示相关问题，请额外提供：
+
+- 使用的按键显示 Mod 及版本号。
+- 捕获方式（离屏渲染 / 最终屏幕捕获）。
+- 雨条异常出现的大致时间和涉及的按键。
 
 ## 给其他 Mod 作者
 
-本 Mod 提供公共渲染 API（命名空间 `ADOFAI.EditorTweaks.Api.Rendering`，程序集 `ADOFAI.EditorTweaks.ChartRendering.dll`），Creplay 用它渲染回放。API 只做向后兼容的新增，详见 [Doc/Api/ChartRendering.md](Doc/Api/ChartRendering.md)。
+AETC 提供公共渲染 API，供其他 Mod 调用渲染功能。
+
+- 命名空间：`ADOFAI.EditorTweaks.Api.Rendering`
+- 程序集：`ADOFAI.EditorTweaks.ChartRendering.dll`
+
+目前 Creplay 等 Mod 使用该 API 发起渲染。
+
+1.1.1 没有修改公共 API。API 文档位于仓库中的 [Doc/Api/ChartRendering.md](Doc/Api/ChartRendering.md)。
 
 ## 开发
 
+### 构建环境
+
+需要安装 .NET SDK，并准备 ADOFAI 游戏文件。
+
+### 构建步骤
+
 ```powershell
-copy Local.props.example Local.props   # 填入本机游戏路径 GameExePath
+copy Local.props.example Local.props
+```
+
+在 `Local.props` 中填写本机游戏路径 `GameExePath`，然后执行：
+
+```powershell
 dotnet build ADOFAI.EditorTweaks.ChartRendering.csproj -c Debug
 ```
 
-首次构建会安装网页依赖并下载 FFmpeg。构建与发布见 [Doc/BuildAndRelease.md](Doc/BuildAndRelease.md)，技术文档索引见 [Doc/README.md](Doc/README.md)，更新内容见 [CHANGELOG.md](CHANGELOG.md)。
+首次构建会安装网页依赖并下载 FFmpeg。
+
+更多开发文档：
+
+- [构建与发布说明](Doc/BuildAndRelease.md)
+- [技术文档索引](Doc/README.md)
+- [更新日志](CHANGELOG.md)
 
 ## 许可
 
-GNU GPL v3.0，见 [LICENSE](LICENSE)。自带的 FFmpeg 为 GPL 版本，许可和源码获取方式见 `ThirdParty/FFmpeg/`。
+本项目以 GNU GPL v3.0 发布，详见 [LICENSE](LICENSE)。
+
+项目使用的 FFmpeg 为 GPL 版本，相关许可信息和源码获取方式见 `ThirdParty/FFmpeg/`。

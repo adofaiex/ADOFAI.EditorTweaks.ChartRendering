@@ -99,6 +99,32 @@ export interface WebUiState {
   settings: SettingsState;
   render: RenderState;
   encoders: EncoderState;
+  ffmpeg: FfmpegState;
+  update: UpdateState;
+}
+
+export interface UpdateState {
+  status: "idle" | "checking" | "available" | "current" | "failed";
+  latest: string;
+  current: string;
+  url: string;
+  notes: string;
+  auroraUrl: string;
+}
+
+// FFmpeg auto-download state (ChartFfmpegInstaller): the lite package ships without ffmpeg.exe.
+export interface FfmpegState {
+  status: "missing" | "downloading" | "verifying" | "installing" | "ready" | "failed";
+  version: string;
+  variant: string;
+  progress: number;
+  downloadedBytes: number;
+  totalBytes: number;
+  installedBytes: number;
+  source: string;
+  message: string;
+  path: string;
+  sha256: string;
 }
 
 // Encoder detection (ChartEncoderCapabilities). results maps an FFmpeg encoder name to whether it
