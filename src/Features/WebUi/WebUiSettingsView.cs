@@ -19,7 +19,10 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
 
             // UMM's mod list has no free-form status text, so the FFmpeg state is shown in this panel.
             GUILayout.BeginVertical(GUI.skin.box);
+            Color previousColor = GUI.color;
+            GUI.color = FfmpegStatusColor();
             GUILayout.Label("FFmpeg：" + ChartFfmpegInstaller.Describe());
+            GUI.color = previousColor;
             GUILayout.BeginHorizontal();
             if (!ChartFfmpegInstaller.IsReady && !ChartFfmpegInstaller.IsBusy
                 && GUILayout.Button("安装定制版 FFmpeg", GUILayout.Width(180f)))
@@ -45,7 +48,10 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             if (ChartUpdateChecker.IsAvailable)
             {
                 GUILayout.BeginVertical(GUI.skin.box);
+                Color updateColor = GUI.color;
+                GUI.color = HexColor("#7EDC8A");
                 GUILayout.Label("有新版本 " + ChartUpdateChecker.Latest + "：请用 UMM 或 Aurora 更新。");
+                GUI.color = updateColor;
                 GUILayout.BeginHorizontal();
                 if (GUILayout.Button("在 Aurora 中更新", GUILayout.Width(180f)))
                 {
@@ -88,6 +94,26 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
 
             GUILayout.Label("默认只监听本机；开启局域网访问后，同一局域网的手机/平板可以打开 Web 设置页。", GUI.skin.label);
             GUILayout.EndVertical();
+        }
+
+        private static Color FfmpegStatusColor()
+        {
+            if (ChartFfmpegInstaller.IsBusy)
+            {
+                return HexColor("#3BD7FF");
+            }
+
+            if (!ChartFfmpegInstaller.IsReady)
+            {
+                return ChartFfmpegInstaller.Status == "failed" ? HexColor("#FF7184") : HexColor("#F0BF69");
+            }
+
+            return Color.white;
+        }
+
+        private static Color HexColor(string html)
+        {
+            return ColorUtility.TryParseHtmlString(html, out Color color) ? color : Color.white;
         }
     }
 }
