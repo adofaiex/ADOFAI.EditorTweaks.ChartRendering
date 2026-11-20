@@ -50,6 +50,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         private static MethodInfo? jipperCurrentTicks;
         private static MethodInfo? jipperReplacement;
+        private static Type? jipperKeyViewerType;
         private static Type? jipperRainManagerType;
         private static FieldInfo? jipperRainListField;
         private static FieldInfo? jipperRainImageField;
@@ -95,6 +96,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 if (pools == null)
                 {
                     // Not loaded yet; Tick prepares the pools once they appear.
+                    ChartRenderDiagnostics.Log("JRP_PREWARM skipped: JRP KeyViewer is not loaded at render start.");
                     return;
                 }
 
@@ -112,17 +114,58 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         private static Type? FindJipperKeyViewerType()
         {
-            // Looks only inside the JRP assembly. AccessTools.TypeByName scans every type of every
-            // assembly when the type is missing, which is too slow to repeat during a render.
-            foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+            // JALib may rewrite a mod into a cache assembly named "<mod>-JAMod" before loading it
+            // (JipperResourcePack becomes JipperResourcePack-JAMod), so the assembly name is matched
+            // by prefix. When both the original and the rewritten copy are loaded, prefer the one
+            // that owns the live KeyViewer instance.
+            Type? cached = jipperKeyViewerType;
+            if (cached != null && JipperInstanceOf(cached) != null)
             {
-                if (string.Equals(assembly.GetName().Name, JipperAssemblyName, StringComparison.Ordinal))
-                {
-                    return assembly.GetType(JipperKeyViewerTypeName, false);
-                }
+                return cached;
             }
 
-            return null;
+            Type? fallback = null;
+            foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                string? name = assembly.GetName().Name;
+                if (name == null || !name.StartsWith(JipperAssemblyName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                Type? type = assembly.GetType(JipperKeyViewerTypeName, false);
+                if (type == null)
+                {
+                    continue;
+                }
+
+                if (JipperInstanceOf(type) != null)
+                {
+                    jipperKeyViewerType = type;
+                    return type;
+                }
+
+                fallback ??= type;
+            }
+
+            if (fallback != null)
+            {
+                jipperKeyViewerType = fallback;
+            }
+
+            return fallback;
+        }
+
+        private static object? JipperInstanceOf(Type keyViewer)
+        {
+            try
+            {
+                return AccessTools.Field(keyViewer, "Instance")?.GetValue(null);
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         // The distinct RainPool objects of the current JRP key viewer, or null while JRP has no key
@@ -492,6 +535,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 jipperRepurgesLeft = 0;
                 textureFixes = 0;
                 textureFixLogged = false;
+                jipperKeyViewerType = null;
                 Harmony? oldHarmony = harmony;
                 ResetJipperAdapter();
                 if (oldHarmony != null)
