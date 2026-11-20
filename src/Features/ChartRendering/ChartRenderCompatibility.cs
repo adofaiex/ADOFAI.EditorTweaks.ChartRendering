@@ -54,6 +54,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private static Type? jipperRainManagerType;
         private static FieldInfo? jipperRainListField;
         private static FieldInfo? jipperRainImageField;
+        private static FieldInfo? jipperRainPoolCountField;
+        private static FieldInfo? jipperRainPoolGhostField;
         private static int textureFixes;
         private static bool textureFixLogged;
         private static Func<long>? jipperTicksLong;
@@ -69,6 +71,28 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private static int jipperRepurgesLeft;
         private static int nextJipperRepurgeFrame;
         private static int renderFps = 60;
+
+        // The initial pool size follows the rain lifetime (rainHeight * 0.3 / rainSpeed seconds) so a
+        // slow or tall rain setting gets a bigger pool instead of running dry in the first seconds.
+        // 60 presses per second per pool (two keys) is a deliberately generous upper bound; the size
+        // is clamped so an extreme setting cannot allocate thousands of UI objects at render start.
+        private const int JipperPoolMinNormal = 32;
+        private const int JipperPoolMaxNormal = 96;
+        private const int JipperPoolMinGhost = 16;
+        // Runtime top-up: a pool below the low-water mark gets a batch while the canvas is restored to
+        // Overlay. Checking every frame leaves several frames of headroom because each key can press
+        // at most once per output frame, and caps the number of top-ups per pool per render.
+        private const int JipperPoolLowWaterNormal = 8;
+        private const int JipperPoolLowWaterGhost = 4;
+        private const int JipperPoolTopUpNormal = 32;
+        private const int JipperPoolTopUpGhost = 16;
+        private const int JipperPoolMaxTopUps = 4;
+        private static int jipperPoolNormal = JipperPoolMinNormal;
+        private static int jipperPoolGhost = JipperPoolMinGhost;
+        private static readonly Dictionary<object, int> JipperPoolTopUps = new Dictionary<object, int>();
+        private static List<object>? currentJipperPools;
+        private static int jipperRainAllocations;
+        private static bool jipperCreatingRains;
 
         // Jipper creates Rain UI objects lazily on the first key press. If that first creation happens
         // after the canvas has been switched to ScreenSpaceCamera for offscreen capture, the pooled
@@ -86,6 +110,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             {
                 PreparedJipperPools.Clear();
                 RepurgeJipperPools.Clear();
+                JipperPoolTopUps.Clear();
+                currentJipperPools = null;
+                jipperRainAllocations = 0;
                 jipperRepurgesLeft = 0;
                 if (Main.Settings != null && !Main.Settings.ChartRenderCompatKeyViewers)
                 {
@@ -204,6 +231,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             if (lastFrameIndex % JipperPoolCheckFrames == 0)
             {
                 List<object>? pools = GetJipperPools();
+                currentJipperPools = pools;
                 if (pools != null)
                 {
                     List<object> fresh = new List<object>();
@@ -254,10 +282,169 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 jipperRepurgesLeft--;
                 nextJipperRepurgeFrame = lastFrameIndex + renderFps * 10;
             }
+
+            // Checked every frame: each key can press at most once per output frame, so a pool with
+            // this much headroom cannot run dry before the next check.
+            if (currentJipperPools != null)
+            {
+                TopUpJipperPoolsLocked(currentJipperPools);
+            }
+        }
+
+        // Bars created while the canvas is in ScreenSpaceCamera mode stay invisible, so a pool that
+        // runs out mid-render leaves permanent holes. Top the pool up while it still has headroom and
+        // the canvas can be restored to Overlay for the creation.
+        private static void TopUpJipperPoolsLocked(List<object> pools)
+        {
+            if (offscreenCapture == null)
+            {
+                return;
+            }
+
+            foreach (object pool in pools)
+            {
+                int normal = ReadJipperPoolCount(pool, jipperRainPoolCountField);
+                int ghost = ReadJipperPoolCount(pool, jipperRainPoolGhostField);
+                bool needNormal = normal >= 0 && normal < JipperPoolLowWaterNormal;
+                bool needGhost = jipperPoolGhost > 0 && ghost >= 0 && ghost < JipperPoolLowWaterGhost;
+                if (!needNormal && !needGhost)
+                {
+                    continue;
+                }
+
+                if (!JipperPoolTopUps.TryGetValue(pool, out int topUps))
+                {
+                    topUps = 0;
+                }
+
+                if (topUps >= JipperPoolMaxTopUps)
+                {
+                    continue;
+                }
+
+                int addedNormal = 0;
+                int addedGhost = 0;
+                void Create()
+                {
+                    if (needNormal)
+                    {
+                        addedNormal = AddJipperRains(pool, false, JipperPoolTopUpNormal);
+                    }
+
+                    if (needGhost)
+                    {
+                        addedGhost = AddJipperRains(pool, true, JipperPoolTopUpGhost);
+                    }
+                }
+
+                RectTransform? poolTransform = AccessTools.Field(pool.GetType(), "Transform")?.GetValue(pool) as RectTransform;
+                Canvas? root = poolTransform == null ? null : poolTransform.GetComponentInParent<Canvas>()?.rootCanvas;
+                bool restored = root != null && offscreenCapture != null
+                    && offscreenCapture.TryRunWithCanvasRestored(root, Create);
+                if (!restored)
+                {
+                    // Creating a bar while the canvas is in ScreenSpaceCamera mode leaves it invisible
+                    // for the rest of the render, so only create when the canvas was never taken over.
+                    if (root == null || root.renderMode != RenderMode.ScreenSpaceOverlay)
+                    {
+                        JipperPoolTopUps[pool] = topUps + 1;
+                        ChartRenderDiagnostics.Log("JRP_POOL_TOPUP skipped at frame " + lastFrameIndex
+                            + ": the rain canvas could not be restored to Overlay mode.");
+                        continue;
+                    }
+
+                    Create();
+                }
+
+                JipperPoolTopUps[pool] = topUps + 1;
+                ChartRenderDiagnostics.Log("JRP_POOL_TOPUP frame=" + lastFrameIndex
+                    + " normal=" + normal + "->" + (normal + addedNormal)
+                    + " ghost=" + ghost + "->" + (ghost + addedGhost)
+                    + " restored=" + restored + ".");
+            }
+        }
+
+        private static int ReadJipperPoolCount(object pool, FieldInfo? field)
+        {
+            try
+            {
+                return field != null && field.GetValue(pool) is int count ? count : -1;
+            }
+            catch
+            {
+                return -1;
+            }
+        }
+
+        private static int AddJipperRains(object pool, bool isGhost, int count)
+        {
+            MethodInfo? getRain = AccessTools.Method(pool.GetType(), "GetOrNewRain", new[] { typeof(bool) });
+            MethodInfo? addPool = AccessTools.Method(pool.GetType(), "AddPool");
+            if (getRain == null || addPool == null || count <= 0)
+            {
+                return 0;
+            }
+
+            List<object> created = new List<object>();
+            bool previous = jipperCreatingRains;
+            jipperCreatingRains = true;
+            try
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    object? rain = getRain.Invoke(pool, new object[] { isGhost });
+                    if (rain != null)
+                    {
+                        created.Add(rain);
+                    }
+                }
+
+                foreach (object rain in created)
+                {
+                    addPool.Invoke(pool, new[] { rain, (object)isGhost });
+                }
+            }
+            finally
+            {
+                jipperCreatingRains = previous;
+            }
+
+            return created.Count;
+        }
+
+        // Rain lifetime in seconds: the bar grows rainSpeed * 10/3 pixels per second and is removed
+        // after it travels rainHeight pixels.
+        private static void UpdateJipperPoolCapacityLocked()
+        {
+            int normal = JipperPoolMinNormal;
+            int ghost = JipperPoolMinGhost;
+            try
+            {
+                Type? keyViewer = FindJipperKeyViewerType();
+                object? settings = keyViewer == null ? null : AccessTools.Field(keyViewer, "Settings")?.GetValue(null);
+                if (settings != null)
+                {
+                    Type type = settings.GetType();
+                    float speed = AccessTools.Field(type, "rainSpeed")?.GetValue(settings) is float s ? s : 100f;
+                    float height = AccessTools.Field(type, "rainHeight")?.GetValue(settings) is float h ? h : 200f;
+                    double lifetime = speed > 0.01f ? 0.3 * height / speed : 1.0;
+                    normal = (int)Math.Min(JipperPoolMaxNormal,
+                        Math.Max(JipperPoolMinNormal, Math.Ceiling(lifetime * 60.0)));
+                    bool useGhost = !(AccessTools.Field(type, "useGhostRain")?.GetValue(settings) is bool on) || on;
+                    ghost = useGhost ? Math.Max(JipperPoolMinGhost, normal / 2) : 0;
+                }
+            }
+            catch
+            {
+            }
+
+            jipperPoolNormal = normal;
+            jipperPoolGhost = ghost;
         }
 
         private static void PrepareJipperPools(List<object> pools, bool purgePooled, string tag)
         {
+            UpdateJipperPoolCapacityLocked();
             try
             {
                 int pooledDestroyed = 0;
@@ -324,21 +511,30 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
 
         private static void CreateJipperRainBatches(List<object> pools, int[] counts)
         {
-            foreach (object pool in pools)
+            bool previous = jipperCreatingRains;
+            jipperCreatingRains = true;
+            try
             {
-                MethodInfo? getRain = AccessTools.Method(pool.GetType(), "GetOrNewRain", new[] { typeof(bool) });
-                MethodInfo? addPool = AccessTools.Method(pool.GetType(), "AddPool");
-                if (getRain != null && addPool != null)
+                foreach (object pool in pools)
                 {
-                    CreateJipperRainBatch(pool, getRain, addPool, counts);
+                    MethodInfo? getRain = AccessTools.Method(pool.GetType(), "GetOrNewRain", new[] { typeof(bool) });
+                    MethodInfo? addPool = AccessTools.Method(pool.GetType(), "AddPool");
+                    if (getRain != null && addPool != null)
+                    {
+                        CreateJipperRainBatch(pool, getRain, addPool, counts);
+                    }
                 }
+            }
+            finally
+            {
+                jipperCreatingRains = previous;
             }
         }
 
         private static void CreateJipperRainBatch(object pool, MethodInfo getRain, MethodInfo addPool, int[] counts)
         {
             List<object> created = new List<object>();
-            for (int i = 0; i < 32; i++)
+            for (int i = 0; i < jipperPoolNormal; i++)
             {
                 object? rain = getRain.Invoke(pool, new object[] { false });
                 if (rain != null)
@@ -354,7 +550,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
 
             created.Clear();
-            for (int i = 0; i < 16; i++)
+            for (int i = 0; i < jipperPoolGhost; i++)
             {
                 object? rain = getRain.Invoke(pool, new object[] { true });
                 if (rain != null)
@@ -501,6 +697,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                         + " clockReads=" + clockReads
                         + " inputEvents=" + inputEvents
                         + " textureFixes=" + textureFixes
+                        + " rainPoolAllocations=" + jipperRainAllocations
                         + " handoff=continuous.");
                 }
 
@@ -512,6 +709,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 // The capture is disposed after the render; do not keep it (or its pools) around.
                 offscreenCapture = null;
                 RepurgeJipperPools.Clear();
+                JipperPoolTopUps.Clear();
+                currentJipperPools = null;
                 jipperRepurgesLeft = 0;
             }
         }
@@ -532,6 +731,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 offscreenCapture = null;
                 PreparedJipperPools.Clear();
                 RepurgeJipperPools.Clear();
+                JipperPoolTopUps.Clear();
+                currentJipperPools = null;
+                jipperRainAllocations = 0;
                 jipperRepurgesLeft = 0;
                 textureFixes = 0;
                 textureFixLogged = false;
@@ -624,9 +826,16 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 }
 
                 Type? rainType = AccessTools.TypeByName("JipperResourcePack.KeyViewerContents.Rain");
+                Type? rainPoolType = AccessTools.TypeByName("JipperResourcePack.KeyViewerContents.RainPool");
                 jipperRainListField = jipperRainManagerType == null ? null : AccessTools.Field(jipperRainManagerType, "RainList");
                 jipperRainImageField = rainType == null ? null : AccessTools.Field(rainType, "Image");
+                jipperRainPoolCountField = rainPoolType == null ? null : AccessTools.Field(rainPoolType, "_poolCount");
+                jipperRainPoolGhostField = rainPoolType == null ? null : AccessTools.Field(rainPoolType, "_ghostPoolCount");
                 MethodInfo? rainPostfix = AccessTools.Method(typeof(ChartRenderCompatibility), nameof(JipperRainPostfix));
+                MethodInfo? allocationPrefix = AccessTools.Method(typeof(ChartRenderCompatibility), nameof(JipperRainAllocationPrefix));
+                MethodInfo? getOrNewRain = rainPoolType == null
+                    ? null
+                    : AccessTools.Method(rainPoolType, "GetOrNewRain", new[] { typeof(bool) });
 
                 jipperCurrentTicks = currentTicks;
                 Harmony candidate = new Harmony(HarmonyId);
@@ -651,6 +860,17 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     // entries. Do not patch ToStopwatchTicks: its real-clock event offset must remain
                     // untouched for normal input processing.
                     candidate.Patch(work, prefix: new HarmonyMethod(workPrefix));
+                    if (getOrNewRain != null && allocationPrefix != null)
+                    {
+                        try
+                        {
+                            candidate.Patch(getOrNewRain, prefix: new HarmonyMethod(allocationPrefix));
+                        }
+                        catch (Exception allocationException)
+                        {
+                            ChartRenderDiagnostics.Log("JRP rain pool counter unavailable: " + allocationException.Message);
+                        }
+                    }
 
                     harmony = candidate;
                     adapterReady = true;
@@ -679,6 +899,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             jipperRainManagerType = null;
             jipperRainListField = null;
             jipperRainImageField = null;
+            jipperRainPoolCountField = null;
+            jipperRainPoolGhostField = null;
             jipperTicksLong = null;
             jipperTicksUlong = null;
         }
@@ -689,6 +911,34 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             if (method != null && !targets.Contains(method))
             {
                 targets.Add(method);
+            }
+        }
+
+        // Counts bars JRP had to allocate because the pool was empty. Such a bar was created while the
+        // canvas was already in ScreenSpaceCamera mode and stays invisible for the rest of the render,
+        // then returns to the pool and is reused, so this number must stay at zero.
+        private static void JipperRainAllocationPrefix(object __instance, bool __0)
+        {
+            if (!active || jipperCreatingRains)
+            {
+                return;
+            }
+
+            FieldInfo? field = __0 ? jipperRainPoolGhostField : jipperRainPoolCountField;
+            if (field == null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (field.GetValue(__instance) is int count && count <= 0)
+                {
+                    jipperRainAllocations++;
+                }
+            }
+            catch
+            {
             }
         }
 
