@@ -19,6 +19,13 @@ namespace ADOFAI.EditorTweaks.ChartRendering
         public string WebUiOpenMode = WebUiOpenTargets.Auto;
         // Opt-in LAN access. The loopback server stays local; a TCP proxy forwards LAN connections.
         public bool WebUiAllowLan;
+        // Fixed LAN port so a bookmark on a phone/tablet keeps working across game restarts.
+        public int WebUiLanPort = WebUiAccess.DefaultLanPort;
+        // Secrets for "remember this device" cookies (full control) and the read-only progress link.
+        // Generated once and kept, so remembered devices survive restarts; "forget all devices"
+        // regenerates them. Never shown in logs.
+        public string WebUiDeviceKey = string.Empty;
+        public string WebUiViewKey = string.Empty;
         // Optional ffmpeg.exe to use instead of the bundled one. Empty = bundled.
         public string FfmpegCustomPath = string.Empty;
         public string ChartRenderWorkspaceDirectory = string.Empty;
@@ -27,6 +34,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering
         public int ChartRenderHeight = 1080;
         public int ChartRenderFps = 60;
         public int ChartRenderCrf = 18;
+        // Simple quality tier: small / standard / high / lossless use a quality target with a bitrate
+        // cap (CQVBR-style); custom uses ChartRenderCrf / ChartRenderBitrateMbps as before.
+        public string ChartRenderQualityTier = ChartRenderQualityTiers.Standard;
+        // Learned "average bitrate / cap" per codec|tier from finished renders, for size estimates.
+        public string ChartRenderSizeStats = string.Empty;
         public int ChartRenderBitrateMbps = ChartRenderBitratePresets.AutoBitrateMbps;
         // Target the configured bitrate instead of constant quality. Default false keeps CRF/VBR.
         public bool ChartRenderConstantBitrate;
@@ -55,6 +67,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering
         public bool ChartRenderShowHitJudgments = true;
         // Experimental: keep supported third-party key-viewer animations on the render timeline.
         public bool ChartRenderCompatKeyViewers = true;
+        // Diagnostic mode: more detailed logs and the render's temp files are kept for inspection.
+        public bool ChartRenderDiagnosticMode;
         public bool ChartRenderUseSelectedRange;
         public bool ChartRenderAdvancedSettingsExpanded;
         public bool ChartRenderProfessionalSettingsExpanded;
@@ -92,6 +106,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             ChartRenderHeight = MakeEven(Mathf.Clamp(ChartRenderHeight, MinSize, MaxHeight));
             ChartRenderFps = Mathf.Clamp(ChartRenderFps, 1, MaxFps);
             ChartRenderCrf = Mathf.Clamp(ChartRenderCrf, 0, 51);
+            ChartRenderQualityTier = ChartRenderQualityTiers.Normalize(ChartRenderQualityTier);
+            ChartRenderSizeStats = ChartRenderSizeStats ?? string.Empty;
+            WebUiLanPort = WebUiAccess.NormalizePort(WebUiLanPort);
+            WebUiDeviceKey = WebUiDeviceKey ?? string.Empty;
+            WebUiViewKey = WebUiViewKey ?? string.Empty;
             ChartRenderBitrateMbps = Mathf.Clamp(ChartRenderBitrateMbps, ChartRenderBitratePresets.AutoBitrateMbps, ChartRenderBitratePresets.MaxBitrateMbps);
             ChartRenderPreset = string.IsNullOrWhiteSpace(ChartRenderPreset) ? "veryfast" : ChartRenderPreset.Trim();
             ChartRenderEncoderMode = ChartRenderOptionValues.NormalizeEncoderMode(ChartRenderEncoderMode);
@@ -125,6 +144,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             WebUiOpenHotkey = WebUiHotkey.Default;
             WebUiOpenMode = WebUiOpenTargets.Auto;
             WebUiAllowLan = false;
+            WebUiLanPort = WebUiAccess.DefaultLanPort;
+            // Device keys are kept: resetting preferences should not log the user's tablet out.
             FfmpegCustomPath = string.Empty;
             ChartRenderWorkspaceDirectory = Path.Combine(modEntry.Path, "Workspace");
             ChartRenderExportDirectory = Path.Combine(
@@ -133,6 +154,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             ChartRenderHeight = 1080;
             ChartRenderFps = 60;
             ChartRenderCrf = 18;
+            ChartRenderQualityTier = ChartRenderQualityTiers.Standard;
             ChartRenderBitrateMbps = ChartRenderBitratePresets.AutoBitrateMbps;
             ChartRenderConstantBitrate = false;
             ChartRenderPreset = "veryfast";
@@ -152,6 +174,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             ChartRenderAudioSyncOffsetMs = 0f;
             ChartRenderShowHitJudgments = true;
             ChartRenderCompatKeyViewers = true;
+            ChartRenderDiagnosticMode = false;
             ChartRenderUseSelectedRange = false;
             ChartRenderAdvancedSettingsExpanded = false;
             ChartRenderProfessionalSettingsExpanded = false;

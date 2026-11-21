@@ -222,6 +222,8 @@ Patch 点：
 - 同一输出帧内完成的按下/松开不能都直接取帧时间，否则 `RawRain.FinalSizeY=0`，雨段会永久不可见。适配器记录原始按下时间，同帧松开时保留原始按压时长并限制在一帧以内；原始边沿时间完全相同时给一个输出帧，确保快速点击至少可见一次。跨帧事件仍按视频帧计时。
 - 不 Patch `ToStopwatchTicks`，避免输入线程的 `_eventOffsetTicks` 混入视频时间；不全局 Patch `Stopwatch`，也不伪造键盘输入。
 - JRP 由 JALib 异步启用，可能在渲染中途才出现。离屏渲染期间每 30 帧检查一次 JRP 的雨条池，发现没准备过的池（晚加载，或 JRP 重建了按键）就临时把画布切回 Overlay，销毁池里的雨条并重新预创建（日志 `JRP_LATE_PREWARM`）。当时还在屏幕上的雨条之后会回到池里，而池是后进先出，会被优先复用，所以 5 秒和 15 秒后对同一批池再重建一次（`JRP_LATE_REPURGE`）。只在 JRP 程序集里查找类型，没装 JRP 时几乎没有开销。
+- 查找 JRP 类型时按程序集名**前缀**匹配：JALib 会把部分 Mod 重新生成为缓存程序集（`JipperResourcePack` → `JipperResourcePack-JAMod`）再加载，精确匹配会找不到正在运行的 KeyViewer，预创建和晚重建都会静默跳过，雨条就只在离屏画布下新建而不可见。两个程序集都在时，优先选拥有活动 `KeyViewer.Instance` 的那个。
+- 雨条池的初始大小按雨条存活时间计算（`rainHeight × 0.3 / rainSpeed` 秒，按每池 60 次/秒的保守上限估算，每池 32–96 条，残影为其一半）。渲染中每帧检查池余量（普通 < 8、残影 < 4），不足时临时切回 Overlay 补一批（`JRP_POOL_TOPUP`，每池每次渲染最多补 4 次）；如果画布无法还原成 Overlay 就跳过，绝不在离屏画布下新建。渲染结束时日志里的 `rainPoolAllocations` 必须为 0，非 0 说明有雨条是在离屏画布下新建的、会一直不可见。
 - 渲染结束时不能直接跳回真实 `Stopwatch`：视频时长和实际渲染耗时不同，会让已有雨段/KPS 时间戳突然倒退或前进。当前实现记录连续交接点，渲染后从该点按真实时间速度继续；正常输入事件只加固定偏移，保留原来的相对时间。下一次渲染也从同一连续时间轴开始。
 - 同时支持 `long` 和 `ulong` 版本的 `CurrentTicks`。适配器失败会整体回滚并继续普通渲染，停用 Mod 时会移除兼容补丁。
 - `ChartRenderCompatKeyViewers` 默认开启，可在设置页关闭。摄像机模式不包含 KeyViewer 画布，因此不会启用此适配器。
@@ -536,7 +538,33 @@ temp_video.mp4 | temp_video.mov
 
 ## 码率控制
 
-`ChartRenderBitrateMbps = 0` 且关闭恒定比特率时，画质只由 CRF 控制。填写非 0 码率时使用 VBR/ABR：
+### 画质档位（1.1.2 起的默认方式）
+
+`ChartRenderQualityTier` 为 `small` / `standard` / `high` 时，按画质编码并设码率上限（OBS 叫 CQVBR）：画面简单时文件小，粒子多的画面也不会超过上限，只是画质略降。`lossless` 不设上限。`custom` 使用下面原来的方式。CBR、ProRes 和自定义编码参数模式不使用档位。
+
+上限（`ChartRenderQualityTiers.CapMbps`）= YouTube 推荐上传码率（SDR，≤30 帧和 48–60 帧两列，60 帧以上按平方根放大）× 档位倍数（1 / 2 / 4）× 编码格式系数（H.264 1、HEVC 0.7、AV1 0.6、H.266 0.5）。标准档 1080p60 = 24 Mbps，4K60 = 120 Mbps，都高于 B 站要求的下限（1080p 6 Mbps、4K 20 Mbps）。
+
+为什么改：1.1.0 / 1.1.1 在码率为 0 时不限码率。用满屏噪点的 1080p60 测试画面实测：x264 CRF 23 不限为 284 Mbps，NVENC 固定 QP 25 为 421 Mbps，SVT-AV1 CRF 34 为 393 Mbps；加上限后都回到上限附近。
+
+各编码器的实现（画质值见 `QualityTable`，是初稿，待用真实谱面校准）：
+
+| 编码器 | 有上限的档位 | 近似无损 |
+| --- | --- | --- |
+| NVENC H.264 / HEVC / AV1 | `-rc vbr -cq <q> -b:v 0 -maxrate <0.9×上限> -bufsize <2×>` | `-rc constqp -qp <q>`（AV1 为 q×4，0–255 刻度） |
+| AMD AMF | `-rc qvbr -qvbr_quality_level <q> -b:v <0.6×上限> -maxrate/-bufsize` | `-rc qvbr` |
+| Intel QSV | `-global_quality <q> -b:v <0.6×上限> -maxrate/-bufsize`（驱动支持时为 QVBR，否则 VBR） | ICQ |
+| libx264 / libx265 | `-crf <q> -maxrate <0.9×上限> -bufsize <2×>` | `-crf <q>` |
+| libsvtav1 | `-crf <q> -svtav1-params mbr=<上限 kbps>` | `-crf <q>` |
+| libaom-av1 | `-crf <q> -b:v <0.5×上限>`（libaom 把它当宽松的平均目标） | `-crf <q> -b:v 0` |
+| libvvenc | `-b:v <0.6×上限>`（没有带上限的画质模式） | `-qp <q>` |
+
+编码器的实际限制取上限的 90%：同一段噪点画面上 NVENC 和 x264 会超出 `-maxrate` 9–10%，取 90% 后实测 x264 23.6 / NVENC 24.2 Mbps（上限 24）。libaom 超得更多，所以只给 50%。AMD / Intel 的参数在真实硬件上还没验证。
+
+渲染结束后 `ChartRenderSession.RecordOutputSize` 记录“平均视频码率 / 上限”，按 `编码格式|档位` 保存在 `ChartRenderSizeStats`（和上次的值各取一半），设置页的“通常约”用它估算。
+
+### 自定义（`custom`）
+
+`ChartRenderBitrateMbps = 0` 且关闭恒定比特率时，画质只由 CRF 控制，没有上限。填写非 0 码率时使用 VBR/ABR：
 
 ```text
 -b:v <target>M -maxrate <target * 1.5>M -bufsize <target * 2>M
@@ -596,6 +624,22 @@ final.mp4
 - 合并空白和下划线。
 - trim 空格、点、下划线。
 - 限制基础文件名长度。
+
+## 临时文件和工作区
+
+每次渲染在 `Workspace\CurrentRender_<时间>_<id>\` 写原始视频和音频，和成片差不多大。
+
+- 渲染成功、取消、失败（包括合成失败）后都会删除；只有诊断模式会保留。1.1.1 及以前成功渲染后不删，只在下一次渲染时删除一小时以前的，工作区会堆积好几 GB。
+- 渲染开始时删除其他所有 `CurrentRender*`（被放弃的 FFmpeg 进程还占着的删不掉，跳过）。
+- Mod 加载时（`ChartRenderWorkspace.CleanupAtStartup`）删除全部残留：这时不可能有渲染在进行，残留来自崩溃或强关游戏。
+- 工具页显示占用并可以手动清理（`POST /api/workspace/clean`）。
+
+## 诊断
+
+- 渲染日志开头记录 `Player.log offset at render start`，导出诊断包时据此只截取相关的游戏日志。
+- 诊断模式（`ChartRenderDiagnosticMode`）：每 600 帧记一行 `SAMPLE` 状态、每 3000 帧记一次内存，并保留临时文件。
+- 诊断包（`ChartRenderDiagnosticsExport`）：最近 3 份渲染日志、截取后的 Player.log、Player-prev.log（崩溃时用）、系统和 Mod 信息、去掉密钥的设置，以及 `Resources/LogGuide.md`。用户目录换成 `%USERPROFILE%`，令牌和密钥换成 `<hidden>`。
+- `LogGuide.md` 是写给 AI 和玩家的日志分析指南。新增重要日志行时同步更新它。
 
 ## 取消和恢复
 

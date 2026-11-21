@@ -23,6 +23,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering
             Localization.Load(modEntry);
             Settings = Settings.Load(modEntry);
             Settings.EnsureDefaults(modEntry);
+            // Nothing can be rendering yet, so any temp folder in the workspace is a leftover from a
+            // crash or a killed game; they are as large as finished videos.
+            ChartRenderWorkspace.CleanupAtStartup(Settings);
 
             modEntry.OnToggle = OnToggle;
             modEntry.OnUpdate = OnUpdate;

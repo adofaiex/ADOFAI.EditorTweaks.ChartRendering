@@ -76,7 +76,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             string hardwarePreset = ChartRenderOptionValues.PresetFollowEncoderMode,
             string cpuPreset = ChartRenderOptionValues.PresetFollowEncoderMode,
             bool constantBitrate = false,
-            string hardwareEncoder = ChartRenderOptionValues.HardwareEncoderAuto)
+            string hardwareEncoder = ChartRenderOptionValues.HardwareEncoderAuto,
+            string qualityTier = ChartRenderQualityTiers.Custom)
         {
             this.ffmpegPath = ffmpegPath;
             this.tempVideoPath = tempVideoPath;
@@ -99,6 +100,46 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             this.cpuPreset = ChartRenderOptionValues.NormalizeCpuPreset(cpuPreset);
             this.constantBitrate = constantBitrate;
             this.hardwareEncoder = ChartRenderOptionValues.NormalizeHardwareEncoder(hardwareEncoder);
+            this.qualityTier = ChartRenderQualityTiers.Normalize(qualityTier);
+        }
+
+        private readonly string qualityTier;
+
+        // Quality tiers (simple encoder view) encode at a quality target with a bitrate cap. Custom,
+        // CBR, ProRes and the custom encoder mode keep their own rate control.
+        private bool UsesTier()
+        {
+            return qualityTier != ChartRenderQualityTiers.Custom
+                && !UsesConstantBitrate()
+                && effectiveVideoCodec != ChartRenderOptionValues.VideoCodecProRes
+                && encoderMode != ChartRenderOptionValues.EncoderCustom;
+        }
+
+        // 0 = no cap (near-lossless tier).
+        private int TierCapMbps()
+        {
+            return ChartRenderQualityTiers.CapMbps(qualityTier, effectiveVideoCodec, width, height, fps);
+        }
+
+        private int TierQuality(string family)
+        {
+            return ChartRenderQualityTiers.Quality(qualityTier, family);
+        }
+
+        // VBV limit plus a two-second buffer. The encoder limit sits at 90% of the advertised cap:
+        // on a deliberately noisy 1080p60 test clip NVENC and x264 overshot -maxrate by 9-10%, and
+        // the settings page promises the file stays under the cap.
+        private static string CapArguments(int capMbps)
+        {
+            int limit = Math.Max(1, (int)Math.Round(capMbps * 0.9));
+            return " -maxrate " + limit + "M -bufsize " + (limit * 2) + "M";
+        }
+
+        // Average target for encoders whose quality mode ignores the cap: they get a VBR target at
+        // 60% of the cap, so the file can never exceed the cap either way.
+        private static int TierAverageMbps(int capMbps)
+        {
+            return Math.Max(1, (int)Math.Round(capMbps * 0.6));
         }
 
         public string EncoderName { get; private set; } = "unknown";
@@ -677,6 +718,13 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                         + " -maxrate " + target + "M"
                         + " -bufsize " + ChartRenderBitratePresets.GetBufferSizeMbps(target) + "M";
                 }
+                else if (UsesTier())
+                {
+                    // Capped CRF: mbr is SVT-AV1's maximum bitrate in kbps.
+                    int cap = TierCapMbps();
+                    rate = "-crf " + Math.Max(1, TierQuality("svtav1"))
+                        + (cap > 0 ? " -svtav1-params mbr=" + (cap * 1000) : string.Empty);
+                }
                 else if (UsesConstantQuality())
                 {
                     // SVT-AV1 rejects CRF 0.
@@ -704,6 +752,14 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                         + " -minrate " + target + "M"
                         + " -maxrate " + target + "M"
                         + " -bufsize " + ChartRenderBitratePresets.GetBufferSizeMbps(target) + "M";
+                }
+                else if (UsesTier())
+                {
+                    // libaom (only used by custom FFmpeg builds without SVT-AV1) treats -b:v as a loose
+                    // average target here: on a noisy 1080p60 clip a target of 57% of the cap came out
+                    // at 96% of it. Half the cap keeps the file under the cap with some headroom.
+                    int cap = TierCapMbps();
+                    rate = "-crf " + TierQuality("aom") + " -b:v " + (cap > 0 ? Math.Max(1, (int)Math.Round(cap * 0.5)) + "M" : "0");
                 }
                 else if (UsesConstantQuality())
                 {
@@ -742,6 +798,13 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     + " -bufsize " + ChartRenderBitratePresets.GetBufferSizeMbps(target) + "M";
                 Main.Log("H.266/VVC does not support constant bitrate in this FFmpeg build; using VBR at " + target + " Mbps.");
                 ChartRenderDiagnostics.Log("H.266/VVC CBR requested; libvvenc only supports VBR, so VBR is used.");
+            }
+            else if (UsesTier())
+            {
+                // libvvenc has no capped-quality mode through FFmpeg: capped tiers use an average
+                // bitrate at 60% of the cap, near-lossless uses a fixed QP.
+                int cap = TierCapMbps();
+                rate = cap > 0 ? "-b:v " + TierAverageMbps(cap) + "M" : "-qp " + TierQuality("vvenc");
             }
             else if (UsesConstantQuality())
             {
@@ -993,6 +1056,14 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     + " -bufsize " + ChartRenderBitratePresets.GetBufferSizeMbps(target) + "M";
             }
 
+            if (UsesTier())
+            {
+                // QVBR takes its peak bitrate from -maxrate. Not yet verified on AMD hardware.
+                int cap = TierCapMbps();
+                string qvbr = "-rc qvbr -qvbr_quality_level " + TierQuality("amf");
+                return cap > 0 ? qvbr + " -b:v " + TierAverageMbps(cap) + "M" + CapArguments(cap) : qvbr;
+            }
+
             if (UsesConstantQuality())
             {
                 // QVBR is AMD's quality-targeted mode; its level uses the same 0-51 range as CRF.
@@ -1014,6 +1085,20 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     + " -maxrate " + target + "M"
                     + " -bufsize " + ChartRenderBitratePresets.GetBufferSizeMbps(target) + "M"
                     + " -low_delay_brc 1";
+            }
+
+            if (UsesTier())
+            {
+                int cap = TierCapMbps();
+                if (cap > 0)
+                {
+                    // global_quality with a max rate selects QVBR where the driver supports it and
+                    // plain VBR otherwise; both stay under the cap. Not yet verified on Intel hardware.
+                    return "-global_quality " + TierQuality("qsv") + " -b:v " + TierAverageMbps(cap) + "M" + CapArguments(cap);
+                }
+
+                string icq = "-global_quality " + TierQuality("qsv");
+                return codec == ChartRenderOptionValues.VideoCodecH264 ? icq + " -look_ahead 1" : icq;
             }
 
             if (UsesConstantQuality())
@@ -1052,6 +1137,12 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 return "prores";
             }
 
+            if (UsesTier())
+            {
+                int cap = TierCapMbps();
+                return "tier " + qualityTier + (cap > 0 ? " cap " + cap + "M" : " uncapped");
+            }
+
             if (effectiveVideoCodec == ChartRenderOptionValues.VideoCodecVvc)
             {
                 return constantBitrate || configuredBitrateMbps > ChartRenderBitratePresets.AutoBitrateMbps
@@ -1077,6 +1168,20 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 return "-rc cbr -b:v " + cbrTarget + "M"
                     + " -maxrate " + cbrTarget + "M"
                     + " -bufsize " + ChartRenderBitratePresets.GetBufferSizeMbps(cbrTarget) + "M";
+            }
+
+            if (UsesTier())
+            {
+                int tierQ = TierQuality(av1 ? "nvenc_av1" : "nvenc");
+                int cap = TierCapMbps();
+                if (cap > 0)
+                {
+                    // -b:v 0 lets -cq decide the bitrate; -maxrate bounds it.
+                    return "-rc vbr -cq " + tierQ + " -b:v 0" + CapArguments(cap);
+                }
+
+                // Near-lossless: no cap. AV1 NVENC uses a 0-255 QP scale for constant QP.
+                return "-rc constqp -qp " + (av1 ? tierQ * 4 : tierQ);
             }
 
             if (UsesConstantQuality())
@@ -1109,6 +1214,14 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     + " -minrate " + cbrTarget + "M"
                     + " -maxrate " + cbrTarget + "M"
                     + " -bufsize " + ChartRenderBitratePresets.GetBufferSizeMbps(cbrTarget) + "M";
+            }
+
+            if (UsesTier())
+            {
+                // CRF with a VBV cap (x264 and x265 both honor -maxrate/-bufsize in CRF mode).
+                int cap = TierCapMbps();
+                string crfArg = "-crf " + TierQuality(effectiveVideoCodec == ChartRenderOptionValues.VideoCodecHevc ? "x265" : "x264");
+                return cap > 0 ? crfArg + CapArguments(cap) : crfArg;
             }
 
             if (UsesConstantQuality())

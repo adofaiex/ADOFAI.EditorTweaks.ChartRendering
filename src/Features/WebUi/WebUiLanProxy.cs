@@ -36,11 +36,23 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             acceptThread.Start();
         }
 
-        public static WebUiLanProxy? TryStart(int localPort, out int lanPort, out string error)
+        // Tries the configured port first (so bookmarks keep working), then nearby ports.
+        public static WebUiLanProxy? TryStart(int localPort, int preferredPort, out int lanPort, out string error)
         {
             error = string.Empty;
-            for (int port = localPort + 1; port <= localPort + 100 && port <= 65535; port++)
+            List<int> ports = new List<int> { preferredPort };
+            for (int p = preferredPort + 1; p <= preferredPort + 20 && p <= 65535; p++)
             {
+                ports.Add(p);
+            }
+
+            foreach (int port in ports)
+            {
+                if (port == localPort)
+                {
+                    continue;
+                }
+
                 TcpListener candidate = new TcpListener(IPAddress.Any, port);
                 try
                 {
