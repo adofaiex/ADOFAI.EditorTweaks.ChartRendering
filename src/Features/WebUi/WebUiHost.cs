@@ -228,7 +228,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 return;
             }
 
-            latestStateJson = WebUiStateBuilder.BuildJson(null);
+            // Both variants exist before the first broadcast: a read-only client that connects right
+            // away must not receive an empty state.
+            Dictionary<string, object> initialState = WebUiStateBuilder.Build(null);
+            latestStateJson = Json.Serialize(initialState);
+            latestViewerStateJson = Json.Serialize(WebUiStateBuilder.ForViewer(initialState));
             listenerThread = new Thread(ListenLoop)
             {
                 IsBackground = true,
