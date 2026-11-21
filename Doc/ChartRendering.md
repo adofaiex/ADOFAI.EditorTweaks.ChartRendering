@@ -538,7 +538,33 @@ temp_video.mp4 | temp_video.mov
 
 ## 码率控制
 
-`ChartRenderBitrateMbps = 0` 且关闭恒定比特率时，画质只由 CRF 控制。填写非 0 码率时使用 VBR/ABR：
+### 画质档位（1.1.2 起的默认方式）
+
+`ChartRenderQualityTier` 为 `small` / `standard` / `high` 时，按画质编码并设码率上限（OBS 叫 CQVBR）：画面简单时文件小，粒子多的画面也不会超过上限，只是画质略降。`lossless` 不设上限。`custom` 使用下面原来的方式。CBR、ProRes 和自定义编码参数模式不使用档位。
+
+上限（`ChartRenderQualityTiers.CapMbps`）= YouTube 推荐上传码率（SDR，≤30 帧和 48–60 帧两列，60 帧以上按平方根放大）× 档位倍数（1 / 2 / 4）× 编码格式系数（H.264 1、HEVC 0.7、AV1 0.6、H.266 0.5）。标准档 1080p60 = 24 Mbps，4K60 = 120 Mbps，都高于 B 站要求的下限（1080p 6 Mbps、4K 20 Mbps）。
+
+为什么改：1.1.0 / 1.1.1 在码率为 0 时不限码率。用满屏噪点的 1080p60 测试画面实测：x264 CRF 23 不限为 284 Mbps，NVENC 固定 QP 25 为 421 Mbps，SVT-AV1 CRF 34 为 393 Mbps；加上限后都回到上限附近。
+
+各编码器的实现（画质值见 `QualityTable`，是初稿，待用真实谱面校准）：
+
+| 编码器 | 有上限的档位 | 近似无损 |
+| --- | --- | --- |
+| NVENC H.264 / HEVC / AV1 | `-rc vbr -cq <q> -b:v 0 -maxrate <0.9×上限> -bufsize <2×>` | `-rc constqp -qp <q>`（AV1 为 q×4，0–255 刻度） |
+| AMD AMF | `-rc qvbr -qvbr_quality_level <q> -b:v <0.6×上限> -maxrate/-bufsize` | `-rc qvbr` |
+| Intel QSV | `-global_quality <q> -b:v <0.6×上限> -maxrate/-bufsize`（驱动支持时为 QVBR，否则 VBR） | ICQ |
+| libx264 / libx265 | `-crf <q> -maxrate <0.9×上限> -bufsize <2×>` | `-crf <q>` |
+| libsvtav1 | `-crf <q> -svtav1-params mbr=<上限 kbps>` | `-crf <q>` |
+| libaom-av1 | `-crf <q> -b:v <0.5×上限>`（libaom 把它当宽松的平均目标） | `-crf <q> -b:v 0` |
+| libvvenc | `-b:v <0.6×上限>`（没有带上限的画质模式） | `-qp <q>` |
+
+编码器的实际限制取上限的 90%：同一段噪点画面上 NVENC 和 x264 会超出 `-maxrate` 9–10%，取 90% 后实测 x264 23.6 / NVENC 24.2 Mbps（上限 24）。libaom 超得更多，所以只给 50%。AMD / Intel 的参数在真实硬件上还没验证。
+
+渲染结束后 `ChartRenderSession.RecordOutputSize` 记录“平均视频码率 / 上限”，按 `编码格式|档位` 保存在 `ChartRenderSizeStats`（和上次的值各取一半），设置页的“通常约”用它估算。
+
+### 自定义（`custom`）
+
+`ChartRenderBitrateMbps = 0` 且关闭恒定比特率时，画质只由 CRF 控制，没有上限。填写非 0 码率时使用 VBR/ABR：
 
 ```text
 -b:v <target>M -maxrate <target * 1.5>M -bufsize <target * 2>M
@@ -598,6 +624,22 @@ final.mp4
 - 合并空白和下划线。
 - trim 空格、点、下划线。
 - 限制基础文件名长度。
+
+## 临时文件和工作区
+
+每次渲染在 `Workspace\CurrentRender_<时间>_<id>\` 写原始视频和音频，和成片差不多大。
+
+- 渲染成功、取消、失败（包括合成失败）后都会删除；只有诊断模式会保留。1.1.1 及以前成功渲染后不删，只在下一次渲染时删除一小时以前的，工作区会堆积好几 GB。
+- 渲染开始时删除其他所有 `CurrentRender*`（被放弃的 FFmpeg 进程还占着的删不掉，跳过）。
+- Mod 加载时（`ChartRenderWorkspace.CleanupAtStartup`）删除全部残留：这时不可能有渲染在进行，残留来自崩溃或强关游戏。
+- 工具页显示占用并可以手动清理（`POST /api/workspace/clean`）。
+
+## 诊断
+
+- 渲染日志开头记录 `Player.log offset at render start`，导出诊断包时据此只截取相关的游戏日志。
+- 诊断模式（`ChartRenderDiagnosticMode`）：每 600 帧记一行 `SAMPLE` 状态、每 3000 帧记一次内存，并保留临时文件。
+- 诊断包（`ChartRenderDiagnosticsExport`）：最近 3 份渲染日志、截取后的 Player.log、Player-prev.log（崩溃时用）、系统和 Mod 信息、去掉密钥的设置，以及 `Resources/LogGuide.md`。用户目录换成 `%USERPROFILE%`，令牌和密钥换成 `<hidden>`。
+- `LogGuide.md` 是写给 AI 和玩家的日志分析指南。新增重要日志行时同步更新它。
 
 ## 取消和恢复
 
