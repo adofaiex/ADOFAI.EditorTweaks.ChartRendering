@@ -43,7 +43,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
         private string lanUrl = string.Empty;
         private readonly List<string> lanUrls = new List<string>();
         private bool lanStartAttempted;
+        private readonly List<string> lanAddresses = new List<string>();
         private string latestStateJson = "{}";
+        private string latestViewerStateJson = "{}";
+        private int lanPort;
+        private int lanPreferredPort;
         private ChartRenderTask? renderTask;
         private int lastEncoderChangeCount = -1;
         private int lastFfmpegChangeCount = -1;
@@ -58,6 +62,29 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
         public static bool LanEnabled => instance != null && instance.lanProxy != null;
 
         public static string LanUrl => instance?.lanUrl ?? string.Empty;
+
+        public static int LanPort => instance?.lanPort ?? 0;
+
+        // Read-only links (no token): http://<address>:<port>/?view=<view key>.
+        public static List<string> LanViewUrls
+        {
+            get
+            {
+                List<string> urls = new List<string>();
+                WebUiHost? host = instance;
+                if (host == null || host.lanProxy == null || Main.Settings == null)
+                {
+                    return urls;
+                }
+
+                foreach (string address in host.lanAddresses)
+                {
+                    urls.Add("http://" + address + ":" + host.lanPort + "/?view=" + Main.Settings.WebUiViewKey);
+                }
+
+                return urls;
+            }
+        }
 
         // Main thread (the UMM settings panel). Same flow as the open-page hotkey.
         public static void OpenFromModMenu()
@@ -190,6 +217,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             }
 
             accessToken = Guid.NewGuid().ToString("N");
+            if (Main.Settings != null && WebUiAccess.EnsureKeys(Main.Settings))
+            {
+                Main.Settings.Save(Main.Mod);
+            }
+
             if (!TryStartListener())
             {
                 Main.Log("[WebUI] Could not bind a loopback HTTP port. The Web settings page is unavailable.");
@@ -204,7 +236,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             };
             listenerThread.Start();
             UpdateLanProxy();
-            Main.Log("[WebUI] Listening on 127.0.0.1. Open " + pageUrl);
+            Main.Log("[WebUI] Listening on 127.0.0.1:" + localPort + " (access token hidden).");
             stateDirty = false;
         }
 
@@ -242,6 +274,19 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
 
             if (lanProxy != null)
             {
+                // A changed LAN port takes effect right away: restart the proxy on the new port.
+                if (WebUiAccess.NormalizePort(Main.Settings!.WebUiLanPort) != lanPreferredPort)
+                {
+                    StopLanProxy();
+                }
+                else
+                {
+                    return;
+                }
+            }
+
+            if (lanProxy != null)
+            {
                 return;
             }
 
@@ -251,7 +296,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             }
 
             lanStartAttempted = true;
-            WebUiLanProxy? proxy = WebUiLanProxy.TryStart(localPort, out int lanPort, out string error);
+            int preferred = WebUiAccess.NormalizePort(Main.Settings!.WebUiLanPort);
+            WebUiLanProxy? proxy = WebUiLanProxy.TryStart(localPort, preferred, out int startedPort, out string error);
             if (proxy == null)
             {
                 Main.Log("[WebUI] LAN access could not start: " + error);
@@ -259,17 +305,23 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             }
 
             lanProxy = proxy;
+            lanPort = startedPort;
+            lanPreferredPort = preferred;
             lanUrls.Clear();
+            lanAddresses.Clear();
             foreach (string address in GetLanAddresses())
             {
+                lanAddresses.Add(address);
                 lanUrls.Add("http://" + address + ":" + lanPort + "/?token=" + accessToken);
             }
 
             lanUrl = lanUrls.Count > 0 ? lanUrls[0] : string.Empty;
-            Main.Log("[WebUI] LAN access enabled on port " + lanPort + ".");
-            foreach (string url in lanUrls)
+            Main.Log("[WebUI] LAN access enabled on port " + lanPort
+                + (lanPort != preferred ? " (port " + preferred + " was in use)" : string.Empty) + ".");
+            foreach (string address in lanAddresses)
             {
-                Main.Log("[WebUI] LAN address: " + url);
+                // Never log the access token: Player.log is often shared when reporting problems.
+                Main.Log("[WebUI] LAN address: http://" + address + ":" + lanPort + "/");
             }
 
             if (lanUrls.Count == 0)
@@ -291,8 +343,10 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
 
             lanProxy.Stop();
             lanProxy = null;
+            lanPort = 0;
             lanUrl = string.Empty;
             lanUrls.Clear();
+            lanAddresses.Clear();
             Main.Log("[WebUI] LAN access disabled.");
             stateDirty = true;
         }
@@ -404,23 +458,45 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 }
 
                 string path = context.Request.Url?.AbsolutePath ?? "/";
+                WebUiAccessLevel level = WebUiAccess.Classify(context.Request, accessToken, Main.Settings, out bool viaToken, out bool viaView);
                 if (path.Equals("/api/events", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (!IsAuthorized(context))
+                    if (level == WebUiAccessLevel.None)
                     {
                         WriteJson(context, 401, Error("Invalid WebUI token."));
                         return;
                     }
 
-                    HandleEvents(context);
+                    HandleEvents(context, level == WebUiAccessLevel.Viewer);
                     return;
                 }
 
                 if (path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (!IsAuthorized(context))
+                    if (level == WebUiAccessLevel.None)
                     {
                         WriteJson(context, 401, Error("Invalid WebUI token."));
+                        return;
+                    }
+
+                    if (path.Equals("/api/session", StringComparison.OrdinalIgnoreCase))
+                    {
+                        WriteJson(context, 200, new Dictionary<string, object> { ["mode"] = level == WebUiAccessLevel.Full ? "full" : "view" });
+                        return;
+                    }
+
+                    if (level != WebUiAccessLevel.Full)
+                    {
+                        WriteJson(context, 403, Error("只读链接只能查看进度，不能修改设置或控制渲染。"));
+                        return;
+                    }
+
+                    // Cookie-authenticated writes must be JSON: a plain HTML form from another site
+                    // cannot send that content type without a CORS preflight, which this server refuses.
+                    if (!viaToken && context.Request.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase)
+                        && (context.Request.ContentType ?? string.Empty).IndexOf("application/json", StringComparison.OrdinalIgnoreCase) < 0)
+                    {
+                        WriteJson(context, 415, Error("Expected application/json."));
                         return;
                     }
 
@@ -430,7 +506,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
 
                 if (path.Equals("/docs/manual", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (!IsAuthorized(context))
+                    if (level == WebUiAccessLevel.None)
                     {
                         WriteJson(context, 401, Error("Invalid WebUI token."));
                         return;
@@ -442,7 +518,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
 
                 if (path.Equals("/docs/ffmpeg", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (!IsAuthorized(context))
+                    if (level == WebUiAccessLevel.None)
                     {
                         WriteJson(context, 401, Error("Invalid WebUI token."));
                         return;
@@ -450,6 +526,12 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
 
                     ServeDocumentFile(context, Path.Combine(Main.Mod!.Path, "Resources", "FFmpegReference.html"));
                     return;
+                }
+
+                // Opening the page with ?token= (full) or ?view= (read-only) remembers this device.
+                if ((viaToken || viaView) && Main.Settings != null && (path == "/" || path.EndsWith("index.html", StringComparison.OrdinalIgnoreCase)))
+                {
+                    WebUiAccess.Remember(context.Response, Main.Settings, level);
                 }
 
                 ServeStaticFile(context, path);
@@ -470,6 +552,13 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
 
         private void HandleApi(HttpListenerContext context, string path)
         {
+            if (context.Request.HttpMethod.Equals("GET", StringComparison.OrdinalIgnoreCase)
+                && path.Equals("/api/diagnostics/download", StringComparison.OrdinalIgnoreCase))
+            {
+                ServeDiagnosticsDownload(context);
+                return;
+            }
+
             if (!context.Request.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase))
             {
                 WriteJson(context, 405, Error("Only GET and POST are supported."));
@@ -539,6 +628,43 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                         return StateResult();
                     }, context);
                     return;
+                case "/api/access/forget":
+                    ExecuteOnMain(() =>
+                    {
+                        WebUiAccess.ForgetAllDevices(Main.Settings);
+                        Main.Settings.Save(Main.Mod!);
+                        Main.Log("[WebUI] All remembered devices and read-only links were reset.");
+                        return StateResult();
+                    }, context);
+                    return;
+                case "/api/workspace/clean":
+                    ExecuteOnMain(() =>
+                    {
+                        if (ChartRenderService.IsActive)
+                        {
+                            return new CommandResult(409, Error("渲染进行中，请在渲染结束后再清理。"));
+                        }
+
+                        int removed = ChartRenderWorkspace.DeleteTempDirectories(
+                            ChartRenderPaths.GetWorkspaceDirectory(Main.Settings), null, out long freed);
+                        Main.Log("[WebUI] Cleaned " + removed + " temp folder(s), " + ChartRenderWorkspace.FormatBytes(freed) + ".");
+                        WebUiStateBuilder.InvalidateCaches();
+                        Dictionary<string, object> response = StateResponse();
+                        PublishState();
+                        response = StateResponse();
+                        response["freedBytes"] = freed;
+                        return new CommandResult(200, response);
+                    }, context);
+                    return;
+                case "/api/folders/list":
+                    WriteJson(context, 200, WebUiFolders.List(body.TryGetValue("path", out object folder) ? folder as string : null));
+                    return;
+                case "/api/folders/open":
+                    WriteJson(context, 200, WebUiFolders.Open(body.TryGetValue("target", out object target) ? target as string : null, Main.Settings));
+                    return;
+                case "/api/diagnostics/export":
+                    ExportDiagnostics(context);
+                    return;
                 case "/api/ffmpeg/cancel-auto":
                     ExecuteOnMain(() =>
                     {
@@ -552,9 +678,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             }
         }
 
-        private void HandleEvents(HttpListenerContext context)
+        private void HandleEvents(HttpListenerContext context, bool viewer)
         {
-            WebUiEventHub.Client client = eventHub.AddClient();
+            WebUiEventHub.Client client = eventHub.AddClient(viewer);
             context.Response.StatusCode = 200;
             context.Response.ContentType = "text/event-stream";
             context.Response.ContentEncoding = new UTF8Encoding(false);
@@ -573,7 +699,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 using (StreamWriter writer = new StreamWriter(context.Response.OutputStream, new UTF8Encoding(false), 1024, true))
                 {
                     writer.AutoFlush = true;
-                    WriteSse(writer, "state", GetLatestStateJson());
+                    WriteSse(writer, "state", viewer ? GetLatestViewerStateJson() : GetLatestStateJson());
                     while (Volatile.Read(ref shutdownRequested) == 0)
                     {
                         if (client.TryTake(out string message, TimeSpan.FromSeconds(15)))
@@ -795,13 +921,16 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
 
         private void PublishState()
         {
-            string json = WebUiStateBuilder.BuildJson(renderTask);
+            Dictionary<string, object> state = WebUiStateBuilder.Build(renderTask);
+            string json = Json.Serialize(state);
+            string viewerJson = Json.Serialize(WebUiStateBuilder.ForViewer(state));
             lock (stateGate)
             {
                 latestStateJson = json;
+                latestViewerStateJson = viewerJson;
             }
 
-            eventHub.Publish("state", json);
+            eventHub.Publish("state", json, viewerJson);
             stateDirty = false;
             nextStateBroadcastTime = Time.unscaledTime + StateBroadcastIntervalSeconds;
         }
@@ -843,6 +972,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                     case "ChartRenderHeight": settings.ChartRenderHeight = GetInt(change.Value, settings.ChartRenderHeight); break;
                     case "ChartRenderFps": settings.ChartRenderFps = GetInt(change.Value, settings.ChartRenderFps); break;
                     case "ChartRenderCrf": settings.ChartRenderCrf = GetInt(change.Value, settings.ChartRenderCrf); break;
+                    case "ChartRenderQualityTier": settings.ChartRenderQualityTier = GetString(change.Value, settings.ChartRenderQualityTier); break;
+                    case "ChartRenderDiagnosticMode": settings.ChartRenderDiagnosticMode = GetBool(change.Value, settings.ChartRenderDiagnosticMode); break;
+                    case "WebUiLanPort": settings.WebUiLanPort = GetInt(change.Value, settings.WebUiLanPort); break;
                     case "ChartRenderBitrateMbps": settings.ChartRenderBitrateMbps = GetInt(change.Value, settings.ChartRenderBitrateMbps); break;
                     case "ChartRenderConstantBitrate": settings.ChartRenderConstantBitrate = GetBool(change.Value, settings.ChartRenderConstantBitrate); break;
                     case "ChartRenderPreset": settings.ChartRenderPreset = GetString(change.Value, settings.ChartRenderPreset); break;
@@ -945,7 +1077,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 }
 
                 SteamFriends.OpenWebOverlay(pageUrl, true);
-                Main.Log("[WebUI] Opened the settings page in Steam Overlay at " + pageUrl);
+                Main.Log("[WebUI] Opened the settings page in Steam Overlay.");
                 failureReason = string.Empty;
                 return true;
             }
@@ -964,11 +1096,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
                 {
                     UseShellExecute = true
                 });
-                Main.Log("[WebUI] " + reason + "; opened the system default browser at " + pageUrl);
+                Main.Log("[WebUI] " + reason + "; opened the system default browser.");
             }
             catch (Exception exception)
             {
-                Main.Log("[WebUI] Could not open the system default browser: " + exception.Message + ". URL: " + pageUrl);
+                Main.Log("[WebUI] Could not open the system default browser: " + exception.Message + ".");
             }
         }
 
@@ -1064,6 +1196,66 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             {
                 return latestStateJson;
             }
+        }
+
+        private string GetLatestViewerStateJson()
+        {
+            lock (stateGate)
+            {
+                return latestViewerStateJson;
+            }
+        }
+
+        // Diagnostics: system facts need the Unity main thread; the zip is written on this thread.
+        private void ExportDiagnostics(HttpListenerContext context)
+        {
+            MainThreadCommand command = new MainThreadCommand(() =>
+                new CommandResult(200, new Dictionary<string, object> { ["info"] = ChartRenderDiagnosticsExport.CollectSystemInfo() }));
+            commands.Enqueue(command);
+            if (!command.Completion.Task.Wait(CommandTimeoutMilliseconds))
+            {
+                WriteJson(context, 503, Error("Unity main thread did not respond in time."));
+                return;
+            }
+
+            string info = command.Completion.Task.Result.Body["info"] as string ?? string.Empty;
+            try
+            {
+                string zip = ChartRenderDiagnosticsExport.Export(Main.Settings, info, accessToken);
+                Main.Log("[WebUI] Diagnostics exported: " + Path.GetFileName(zip));
+                WriteJson(context, 200, new Dictionary<string, object>
+                {
+                    ["file"] = Path.GetFileName(zip),
+                    ["path"] = zip,
+                    ["bytes"] = new FileInfo(zip).Length,
+                });
+            }
+            catch (Exception exception)
+            {
+                WriteJson(context, 500, Error("导出诊断包失败：" + exception.Message));
+            }
+        }
+
+        private static void ServeDiagnosticsDownload(HttpListenerContext context)
+        {
+            string name = WebUiAccess.GetQuery(context.Request.Url, "file");
+            string? path = ChartRenderDiagnosticsExport.Resolve(Main.Settings, name);
+            if (path == null)
+            {
+                WriteJson(context, 404, Error("Diagnostics file not found."));
+                return;
+            }
+
+            context.Response.StatusCode = 200;
+            context.Response.ContentType = "application/zip";
+            context.Response.AddHeader("Content-Disposition", "attachment; filename=\"" + Path.GetFileName(path) + "\"");
+            using (FileStream stream = File.OpenRead(path))
+            {
+                context.Response.ContentLength64 = stream.Length;
+                stream.CopyTo(context.Response.OutputStream);
+            }
+
+            context.Response.Close();
         }
 
         private Dictionary<string, object> StateResponse()
