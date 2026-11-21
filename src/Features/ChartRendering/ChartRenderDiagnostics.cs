@@ -33,6 +33,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             Directory.CreateDirectory(directory);
             PruneRenderLogs(directory);
             Begin(Path.Combine(directory, "render_" + DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture) + ".log"));
+            // Lets the diagnostics export cut Player.log where this render started.
+            Log("Player.log offset at render start: " + ChartRenderDiagnosticsExport.CurrentPlayerLogLength());
+            Log("Diagnostic mode: " + (Verbose ? "on" : "off") + ".");
         }
 
         private static void PruneRenderLogs(string directory)
@@ -121,12 +124,24 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
         }
 
+        // Diagnostic mode (Tools page): extra periodic samples. Off by default to keep logs short.
+        public static bool Verbose { get; set; }
+
         public static void LogFrame(int frame, int frameLimit)
         {
             SetFrame(frame);
             if (!active)
             {
                 return;
+            }
+
+            if (Verbose && frame > 0 && frame % 600 == 0)
+            {
+                LogState(frameLimit, "SAMPLE", ADOBase.conductor, ADOBase.controller);
+                if (frame % 3000 == 0)
+                {
+                    LogMemory("Frame " + frame);
+                }
             }
 
             scrConductor? conductor = ADOBase.conductor;

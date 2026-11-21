@@ -164,6 +164,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 PreviewMode = ParsePreviewMode(source.ChartRenderPreviewMode),
                 Quality = source.ChartRenderCrf,
                 BitrateMbps = source.ChartRenderBitrateMbps,
+                QualityTier = ChartRenderQualityTiers.Parse(source.ChartRenderQualityTier),
                 ConstantBitrate = source.ChartRenderConstantBitrate,
                 CustomEncoderPreset = source.ChartRenderPreset,
                 CustomMuxArguments = source.ChartRenderCustomMuxArgs,
@@ -509,6 +510,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 ChartRenderFps = request.FramesPerSecond,
                 ChartRenderCrf = request.Quality,
                 ChartRenderBitrateMbps = request.BitrateMbps,
+                ChartRenderQualityTier = ChartRenderQualityTiers.Format(request.QualityTier),
                 ChartRenderConstantBitrate = request.ConstantBitrate,
                 ChartRenderPreset = request.CustomEncoderPreset,
                 ChartRenderEncoderMode = ToInternal(request.EncoderMode),
@@ -524,6 +526,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 // A user preference shared by Web UI and API callers, like the key-viewer clock switch.
                 ChartRenderGameViewBackend = ChartRenderOptionValues.NormalizeGameViewBackend(
                     Main.Settings == null ? null : Main.Settings.ChartRenderGameViewBackend),
+                ChartRenderDiagnosticMode = Main.Settings != null && Main.Settings.ChartRenderDiagnosticMode,
                 ChartRenderPreviewMode = ToInternal(request.PreviewMode),
                 ChartRenderAudioFormat = ToInternal(request.AudioFormat),
                 ChartRenderVideoFormat = ToInternal(request.VideoFormat),
