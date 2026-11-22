@@ -10,6 +10,34 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
     {
         private const string BaseName = "ADOFAI Editor Tweaks - Chart Rendering";
         private static string lastText = string.Empty;
+        private static int releaseNumber = -2;
+
+        // The game's build number (shown in game as "r150"). GCNS.releaseNumber is a constant, so it
+        // is read through reflection from the running game rather than compiled into this mod.
+        public static int GameReleaseNumber()
+        {
+            if (releaseNumber != -2)
+            {
+                return releaseNumber;
+            }
+
+            releaseNumber = -1;
+            try
+            {
+                System.Reflection.FieldInfo? field = typeof(GCNS).GetField("releaseNumber",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                object? value = field == null ? null : (field.IsLiteral ? field.GetRawConstantValue() : field.GetValue(null));
+                if (value != null)
+                {
+                    releaseNumber = Convert.ToInt32(value);
+                }
+            }
+            catch
+            {
+            }
+
+            return releaseNumber;
+        }
 
         // Main thread, once per frame from ModEntry.OnUpdate.
         public static void Update(UnityModManager.ModEntry entry)

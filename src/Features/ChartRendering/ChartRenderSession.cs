@@ -28,6 +28,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private bool finished;
         private double renderDurationSeconds = 1.0;
         private string tempDirectory = string.Empty;
+
+        // Diagnostic mode keeps the raw video/audio of a render for inspection.
+        private bool KeepTempFiles => settings.ChartRenderDiagnosticMode;
         private string tempVideoPath = string.Empty;
         private string capturedAudioPath = string.Empty;
         private string outputPath = string.Empty;
@@ -397,7 +400,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     settings.ChartRenderHardwarePreset,
                     settings.ChartRenderCpuPreset,
                     settings.ChartRenderConstantBitrate,
-                    settings.ChartRenderHardwareEncoder);
+                    settings.ChartRenderHardwareEncoder,
+                    settings.ChartRenderQualityTier);
                 encoder.BeginVideo();
                 EncoderName = encoder.EncoderName;
                 BeginForcedVisualClock();
@@ -601,19 +605,30 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             outputStage = OutputStage.Muxing;
             DetailText = Path.GetFileName(outputPath);
             backgroundOk = false;
-            yield return RunBackground(() => encoder!.MuxAudioFile(capturedAudioPath), encoder, result, deleteTempOnCancel: true, deleteTempOnFailure: false, onDone: ok => backgroundOk = ok);
+            // The raw video and audio are as large as the finished file. They are only kept for
+            // inspection in diagnostic mode; otherwise a failed mux removes them too (the render log
+            // already records the FFmpeg error).
+            yield return RunBackground(() => encoder!.MuxAudioFile(capturedAudioPath), encoder, result, deleteTempOnCancel: true, deleteTempOnFailure: !KeepTempFiles, onDone: ok => backgroundOk = ok);
             if (!backgroundOk)
             {
                 Finish(onComplete, result);
                 yield break;
             }
 
-            Cleanup(frameCapture, encoder, restoreEditor: false, deleteTemp: false);
+            // Before 1.1.2 the temp folder was kept after a successful render and only removed by a
+            // later render when it was over an hour old, so several GB piled up in the workspace.
+            Cleanup(frameCapture, encoder, restoreEditor: false, deleteTemp: !KeepTempFiles);
+            if (KeepTempFiles)
+            {
+                WriteLog("Diagnostic mode: temp files kept in " + tempDirectory + ".");
+            }
+
             outputStage = OutputStage.Done;
             result.Success = true;
             result.OutputPath = outputPath;
             result.Message = "OK";
             WriteLog("Render complete: " + outputPath);
+            RecordOutputSize();
             Finish(onComplete, result);
         }
 
@@ -755,17 +770,18 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 Directory.CreateDirectory(workspace);
                 Directory.CreateDirectory(export);
 
-                // A unique directory keeps an abandoned worker from blocking the next render; the
-                // old fixed "CurrentRender" path could still be held by FFmpeg after a timeout.
-                tempDirectory = Path.Combine(workspace, "CurrentRender_"
-                    + DateTime.Now.ToString("yyyyMMdd_HHmmss")
-                    + "_" + Guid.NewGuid().ToString("N").Substring(0, 8));
-                Directory.CreateDirectory(tempDirectory);
-                CleanupStaleRenderDirectories(workspace, tempDirectory);
+                tempDirectory = ChartRenderWorkspace.CreateTempDirectory(workspace, KeepTempFiles);
+                int removed = ChartRenderWorkspace.DeleteTempDirectories(workspace, tempDirectory, out long freed);
+                if (removed > 0)
+                {
+                    WriteLog("Removed " + removed + " leftover temp folder(s) (" + ChartRenderWorkspace.FormatBytes(freed) + ").");
+                }
                 // MP4 cannot hold ProRes, so the intermediate video uses MOV for it.
                 bool proRes = ChartRenderOptionValues.NormalizeVideoCodec(settings.ChartRenderVideoCodec) == ChartRenderOptionValues.VideoCodecProRes;
                 tempVideoPath = Path.Combine(tempDirectory, proRes ? "temp_video.mov" : "temp_video.mp4");
+                CurrentTempVideoPath = tempVideoPath;
                 capturedAudioPath = Path.Combine(tempDirectory, "audio.wav");
+                ChartRenderDiagnostics.Verbose = settings.ChartRenderDiagnosticMode;
                 ChartRenderDiagnostics.BeginRender(workspace);
                 renderRange = configuration.Range;
                 WriteLog("Capture source locked for this render: " + captureSource + "."
@@ -1175,35 +1191,66 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
         }
 
-        private static void CleanupStaleRenderDirectories(string workspace, string currentDirectory)
+        // Logs the real output size and, for capped quality tiers, remembers how much of the cap this
+        // render actually used, so the settings page's "usually about" estimate learns from it.
+        private void RecordOutputSize()
         {
             try
             {
-                foreach (string directory in Directory.EnumerateDirectories(workspace, "CurrentRender*"))
-                {
-                    if (string.Equals(directory, currentDirectory, StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
+                long bytes = new FileInfo(outputPath).Length;
+                int fps = Math.Max(1, settings.ChartRenderFps);
+                double seconds = Math.Max(1.0 / fps, progress.WrittenFrames / (double)fps);
+                double audioMbps = ChartRenderOptionValues.NormalizeAudioFormat(settings.ChartRenderAudioFormat) == ChartRenderOptionValues.AudioFormatAac ? 0.32 : 0.9;
+                double videoMbps = Math.Max(0.0, bytes * 8.0 / 1000000.0 / seconds - audioMbps);
+                lastOutputBytes = bytes;
+                lastAverageMbps = videoMbps;
+                LastOutputPath = outputPath;
+                LastOutputBytes = bytes;
+                LastAverageMbps = videoMbps;
+                LastCapRatio = -1;
+                string message = "Output size: " + ChartRenderWorkspace.FormatBytes(bytes)
+                    + " for " + seconds.ToString("0.0") + " s, average video " + videoMbps.ToString("0.0") + " Mbps";
 
-                    try
-                    {
-                        // Only remove clearly stale leftovers; an abandoned worker may still be
-                        // writing, in which case the delete fails and is ignored.
-                        if (Directory.GetLastWriteTimeUtc(directory) < DateTime.UtcNow.AddHours(-1))
-                        {
-                            Directory.Delete(directory, recursive: true);
-                        }
-                    }
-                    catch
-                    {
-                    }
+                string tier = ChartRenderQualityTiers.Normalize(settings.ChartRenderQualityTier);
+                string codec = ChartRenderOptionValues.NormalizeVideoCodec(settings.ChartRenderVideoCodec);
+                int cap = ChartRenderQualityTiers.CapMbps(tier, codec, settings.ChartRenderWidth, settings.ChartRenderHeight, settings.ChartRenderFps);
+                bool tierApplied = cap > 0
+                    && !settings.ChartRenderConstantBitrate
+                    && codec != ChartRenderOptionValues.VideoCodecProRes
+                    && ChartRenderOptionValues.NormalizeEncoderMode(settings.ChartRenderEncoderMode) != ChartRenderOptionValues.EncoderCustom;
+                if (tierApplied && Main.Settings != null && Main.Mod != null && seconds >= 5.0)
+                {
+                    double ratio = videoMbps / cap;
+                    lastCapRatio = ratio;
+                    LastCapRatio = ratio;
+                    message += " (" + (ratio * 100).ToString("0") + "% of the " + cap + " Mbps cap)";
+                    Main.Settings.ChartRenderSizeStats = ChartRenderQualityTiers.RecordRatio(Main.Settings.ChartRenderSizeStats, codec, tier, ratio);
+                    Main.Settings.Save(Main.Mod);
                 }
+
+                WriteLog(message + ".");
             }
-            catch
+            catch (Exception exception)
             {
+                WriteLog("Could not read the output size: " + exception.Message);
             }
         }
+
+        private long lastOutputBytes;
+        private double lastAverageMbps;
+        private double lastCapRatio = -1;
+
+        public long OutputBytes => lastOutputBytes;
+
+        // For "open folder" on the result line and the result summary on the settings page.
+        public static string LastOutputPath { get; private set; } = string.Empty;
+        // The raw video being written by the running render, for the live size projection.
+        public static string CurrentTempVideoPath { get; private set; } = string.Empty;
+        public static long LastOutputBytes { get; private set; }
+        public static double LastAverageMbps { get; private set; }
+        public static double LastCapRatio { get; private set; } = -1;
+        public double OutputAverageMbps => lastAverageMbps;
+        public double OutputCapRatio => lastCapRatio;
 
         private void DeleteTempDirectory()
         {

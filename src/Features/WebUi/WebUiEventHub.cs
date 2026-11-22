@@ -10,9 +10,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
         private readonly object gate = new object();
         private readonly List<Client> clients = new List<Client>();
 
-        public Client AddClient()
+        public Client AddClient(bool viewer = false)
         {
-            Client client = new Client(this);
+            Client client = new Client(this) { Viewer = viewer };
             lock (gate)
             {
                 clients.Add(client);
@@ -29,6 +29,26 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             }
 
             client.Dispose();
+        }
+
+        // Viewer clients (read-only link) receive viewerData, which has no addresses, tokens or paths.
+        public void Publish(string eventName, string data, string viewerData)
+        {
+            string message = FormatEvent(eventName, data);
+            string viewerMessage = FormatEvent(eventName, viewerData);
+            Client[] all;
+            lock (gate)
+            {
+                all = clients.ToArray();
+            }
+
+            foreach (Client client in all)
+            {
+                if (!client.TryPublish(client.Viewer ? viewerMessage : message))
+                {
+                    RemoveClient(client);
+                }
+            }
         }
 
         public void Publish(string eventName, string data)
@@ -91,6 +111,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             {
                 this.owner = owner;
             }
+
+            public bool Viewer { get; set; }
 
             public bool TryTake(out string message, TimeSpan timeout)
             {

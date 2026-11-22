@@ -84,6 +84,18 @@ namespace ADOFAI.EditorTweaks.Api.Rendering
         Veryslow = 9
     }
 
+    // Added in 1.1.2. Custom keeps the original behavior (Quality + BitrateMbps). The other tiers
+    // encode at a quality target with a bitrate cap derived from the resolution and frame rate, so
+    // particle-heavy charts cannot blow up the file size.
+    public enum ChartRenderQualityTier
+    {
+        Custom = 0,
+        Small = 1,
+        Standard = 2,
+        High = 3,
+        NearLossless = 4
+    }
+
     public enum ChartRenderAudioFormat
     {
         Aac = 0,
@@ -228,6 +240,11 @@ namespace ADOFAI.EditorTweaks.Api.Rendering
 
         public int BitrateMbps { get; set; }
 
+        // Added in 1.1.2. Default Custom keeps the old behavior: Quality and BitrateMbps are used as
+        // given. Other tiers replace them with a quality target and a bitrate cap (see Doc/Api).
+        // ConstantBitrate = true still takes precedence over the tier. ProRes ignores tiers.
+        public ChartRenderQualityTier QualityTier { get; set; } = ChartRenderQualityTier.Custom;
+
         // Added after API v1 shipped. When true, the encoder targets BitrateMbps instead of encoding
         // at a constant quality. BitrateMbps = 0 uses the recommended bitrate. This is best effort:
         // H.264/HEVC use VBV-constrained bitrate control, H.266/VVC falls back to VBR, and ProRes
@@ -269,6 +286,7 @@ namespace ADOFAI.EditorTweaks.Api.Rendering
                 ReadbackFormat = ReadbackFormat,
                 PreviewMode = PreviewMode,
                 Quality = Quality,
+                QualityTier = QualityTier,
                 BitrateMbps = BitrateMbps,
                 ConstantBitrate = ConstantBitrate,
                 CustomEncoderPreset = CustomEncoderPreset ?? string.Empty,

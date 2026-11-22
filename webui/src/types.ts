@@ -3,6 +3,10 @@ export type PatchState = "active" | "failed" | "blocked" | "inactive";
 export type PageKey =
   | "overview"
   | "render"
+  | "output"
+  | "quality"
+  | "capture"
+  | "connect"
   | "tools";
 
 export interface PatchStatus {
@@ -25,6 +29,10 @@ export interface SettingsState {
   ChartRenderHeight: number;
   ChartRenderFps: number;
   ChartRenderCrf: number;
+  // small / standard / high / lossless, or custom (CRF + bitrate as entered).
+  ChartRenderQualityTier: string;
+  ChartRenderDiagnosticMode: boolean;
+  WebUiLanPort: number;
   ChartRenderBitrateMbps: number;
   ChartRenderConstantBitrate: boolean;
   ChartRenderPreset: string;
@@ -72,6 +80,8 @@ export interface RenderState {
   writingOutput: boolean;
   quitRefused: boolean;
   captureSource: string;
+  // Raw video bytes written so far by the running render (live size projection).
+  tempVideoBytes: number;
   outputPath: string;
   message: string;
   progress: RenderProgress;
@@ -84,9 +94,14 @@ export interface WebUiState {
     lanEnabled: boolean;
     lanUrl: string;
     lanUrls: string[];
+    lanPort: number;
+    // Read-only links (no access token).
+    lanViewUrls: string[];
   };
   compatibility: {
     gameVersion: string;
+    // Build number shown in game as "r150"; -1 when unknown.
+    gameRelease: number;
     editorVersion: string;
     modVersion: string;
   };
@@ -101,6 +116,51 @@ export interface WebUiState {
   encoders: EncoderState;
   ffmpeg: FfmpegState;
   update: UpdateState;
+  quality: QualityState;
+  chart: ChartState;
+  disk: { export: DriveState; workspace: DriveState };
+  workspace: WorkspaceState;
+  lastResult: LastResult;
+  // True when this page was opened through a read-only link.
+  viewer?: boolean;
+}
+
+// Quality tier tables (ChartRenderQualityTiers), so the page shows exactly what the encoder uses.
+export interface QualityState {
+  // Encoder family -> quality value for [small, standard, high, lossless].
+  quality: Record<string, number[]>;
+  // Bitrate cap in Mbps per tier for the current codec/resolution/frame rate; 0 = no cap.
+  caps: Record<string, number>;
+  platformMbps: number;
+  // "codec|tier" -> learned average bitrate / cap from earlier renders.
+  learned: Record<string, number>;
+}
+
+export interface ChartState {
+  loaded: boolean;
+  seconds: number;
+  // -1 when the editor has no continuous selection.
+  selectionSeconds: number;
+}
+
+export interface DriveState {
+  drive: string;
+  freeBytes: number;
+}
+
+export interface WorkspaceState {
+  path: string;
+  tempFolders: number;
+  tempBytes: number;
+  logFiles: number;
+  logBytes: number;
+}
+
+export interface LastResult {
+  path: string;
+  bytes: number;
+  averageMbps: number;
+  capRatio: number;
 }
 
 export interface UpdateState {
