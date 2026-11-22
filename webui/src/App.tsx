@@ -34,7 +34,7 @@ import { createEventSource, createMockState, detectSession, diagnosticsDownloadU
 import type { SessionMode } from "./api";
 import {
   QUALITY_LABEL, TIERS, describeEstimate, diskCheck, encoderFamily, estimateSize, formatBytes, formatSize,
-  normalizedTier, projectedSize, renderSeconds, sizeWarnings, tierCap, tierQuality,
+  normalizedTier, projectedSize, renderSeconds, sizeWarnings, tierCap, tierQuality, tierSpeed,
 } from "./estimate";
 import type { TierId } from "./estimate";
 import type { EncoderState, FfmpegState, PageKey, PatchStatus, RenderState, SettingsState, UpdateState, WebUiState } from "./types";
@@ -644,7 +644,7 @@ function OutputPage({ state, onSettings, locked, demo, onAction }: { state: WebU
       <DisclosureButton label={workspaceOpen ? "隐藏工作区目录" : "工作区目录（临时文件和日志）"} open={workspaceOpen} onClick={() => setWorkspaceOpen((v) => !v)} />
       {workspaceOpen ? <>
         <PathSetting label="工作区目录" value={s.ChartRenderWorkspaceDirectory} onChange={(value) => onSettings({ ChartRenderWorkspaceDirectory: value })} onBrowse={() => setPicker("ChartRenderWorkspaceDirectory")} onOpen={() => openFolder("workspace")} disabled={locked} />
-        <div className="settings-note">渲染时的临时视频和音频放在这里，渲染结束（成功或失败）后自动删除。和导出目录放在同一块硬盘上，合成更快。</div>
+        <div className="settings-note">渲染时的临时视频和音频放在这里，渲染结束（成功或失败）后自动删除。建议放在固态硬盘上；如果有两块硬盘，和导出目录分开放，合成时读写不抢同一块盘（机械硬盘上更明显）。</div>
       </> : null}
     </Panel>
     {picker ? <FolderPicker demo={demo} initial={s[picker]} onCancel={() => setPicker(null)} onPick={(path) => { onSettings({ [picker]: path }); setPicker(null); }} /> : null}
@@ -714,7 +714,7 @@ function FolderPicker({ initial, demo, onPick, onCancel }: { initial: string; de
 // ---------------------------------------------------------------------------------------------
 // Quality & encoding
 
-const HW_PRESETS: Array<[string, string]> = [["p1", "p1 最快"], ["p2", "p2"], ["p3", "p3"], ["p4", "p4 默认"], ["p5", "p5"], ["p6", "p6"], ["p7", "p7 最慢、最清晰"]];
+const HW_PRESETS: Array<[string, string]> = [["p1", "p1 最快"], ["p2", "p2"], ["p3", "p3"], ["p4", "p4"], ["p5", "p5"], ["p6", "p6"], ["p7", "p7 最慢、最清晰"]];
 const CPU_PRESETS = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"];
 
 function QualityPage({ state, onSettings, locked }: { state: WebUiState; onSettings: SettingsHandler; locked: boolean }) {
@@ -730,8 +730,14 @@ function QualityPage({ state, onSettings, locked }: { state: WebUiState; onSetti
   const encoderMode = s.ChartRenderEncoderMode.toLowerCase();
   const device = isProRes || isVvc ? "cpu" : encoderMode === "custom" ? "custom" : encoderMode === "cpu-compatibility" ? "cpu" : "gpu";
   const modeDefaults = encoderPresetDefaults[encoderMode] ?? encoderPresetDefaults["auto-balanced"];
-  const hwPreset = s.ChartRenderHardwarePreset.toLowerCase() === "auto" ? modeDefaults.hardware : s.ChartRenderHardwarePreset;
-  const cpuPreset = s.ChartRenderCpuPreset.toLowerCase() === "auto" ? modeDefaults.cpu : s.ChartRenderCpuPreset;
+  // While the speed is left on "auto", a quality tier picks it (FfmpegEncoder.UsesTierSpeed).
+  const followsTier = tier !== "custom" && !s.ChartRenderConstantBitrate && ["auto-balanced", "balanced", "cpu-compatibility"].includes(encoderMode);
+  const autoSpeed = followsTier ? tierSpeed(tier) : modeDefaults;
+  const hwAuto = s.ChartRenderHardwarePreset.toLowerCase() === "auto";
+  const cpuAuto = s.ChartRenderCpuPreset.toLowerCase() === "auto";
+  const hwPreset = hwAuto ? autoSpeed.hardware : s.ChartRenderHardwarePreset;
+  const cpuPreset = cpuAuto ? (isVvc ? "faster" : autoSpeed.cpu) : s.ChartRenderCpuPreset;
+  const autoLabel = followsTier ? "跟随档位" : "自动";
   const detected = Object.keys(state.encoders.results).length > 0;
   const candidates = hardwareCandidates(codec);
   const disabledVendors: Record<string, string> = {};
@@ -749,7 +755,7 @@ function QualityPage({ state, onSettings, locked }: { state: WebUiState; onSetti
   const custom = tier === "custom";
   const tierValue = (id: string) => tierQuality(state, family, id);
   const setDetailed = (value: boolean) => onSettings(value
-    ? { ChartRenderDetailedEncoderSettings: true, ChartRenderHardwarePreset: hwPreset, ChartRenderCpuPreset: cpuPreset }
+    ? { ChartRenderDetailedEncoderSettings: true }
     : { ChartRenderDetailedEncoderSettings: false, ...(encoderMode === "custom" ? { ChartRenderEncoderMode: "auto-balanced" } : {}) });
   const setDevice = (value: string) => onSettings({ ChartRenderEncoderMode: value === "cpu" ? "cpu-compatibility" : value === "custom" ? "custom" : "auto-balanced" });
   // Editing the quality value or bitrate by hand leaves the tiers: the encoder then uses exactly
@@ -779,7 +785,7 @@ function QualityPage({ state, onSettings, locked }: { state: WebUiState; onSetti
             {estimate.kind === "unbounded" ? <><span className="tier-size">不限码率</span><span className="tier-param">可能几 GB，取决于画面</span></>
               : estimate.kind === "nochart" ? <span className="tier-param">加载谱面后显示大小</span>
               : <><span className="tier-size">通常约 {formatSize(estimate.typical)}{estimate.kind === "learned" ? " ✓" : ""}</span><span className="tier-param">最多约 {formatSize(estimate.max)}</span></>}
-            <span className="tier-param">{qLabel} {value ?? "—"} · 上限 {cap > 0 ? `${cap} Mbps` : "不限"}</span>
+            <span className="tier-param">{qLabel} {value ?? "—"} · 上限 {cap > 0 ? `${cap} Mbps` : "不限"} · 速度 {device === "gpu" && !fellBack ? (hwAuto ? tierSpeed(t.id).hardware : hwPreset) : isVvc ? cpuPreset : cpuAuto ? tierSpeed(t.id).cpu : cpuPreset}</span>
           </button>;
         })}
       </div>
@@ -788,16 +794,16 @@ function QualityPage({ state, onSettings, locked }: { state: WebUiState; onSetti
         : <div className="settings-note">“通常约”是估算，粒子多的谱面会更大；“最多约”是上限，画面再复杂也不会超过（超出时画质会稍微下降）。带 ✓ 的是按你上次渲染的实际结果估算。</div>}
       <div className="settings-note">参考：B 站要求 1080p 高于 6 Mbps、4K 高于 20 Mbps；YouTube 推荐 1080p60 12 Mbps、4K60 53–68 Mbps。“标准”档的上限是 YouTube 推荐值的 2 倍，平台转码后仍有余量。</div>
       {sizeWarnings(state).map((w) => <div className="settings-note warning-note" key={w}>{w}</div>)}
-      <SettingSwitch label="详细编码设置" description={`编码器、速度预设、${qLabel}、码率、CBR`} value={detailed} onChange={setDetailed} disabled={locked} />
+      <SettingSwitch label="详细编码设置" description={`编码器、编码速度、${qLabel}、码率、CBR`} value={detailed} onChange={setDetailed} disabled={locked} />
       {detailed ? <div className="settings-section">
         <ChipSetting label="编码器" value={device} options={[["gpu", "显卡"], ["cpu", "CPU"], ["custom", "自定义参数"]]} disabledOptions={isProRes || isVvc ? { gpu: "这个格式只能用 CPU 编码", custom: "这个格式不支持自定义参数" } : detected && candidates.length > 0 && !candidates.some((n) => state.encoders.results[n]) ? { gpu: "没有检测到可用的显卡编码器" } : undefined} onChange={setDevice} disabled={locked} />
         {device === "gpu" && !isProRes && !isVvc ? <>
           <ChipSetting label="硬件编码器" value={s.ChartRenderHardwareEncoder.toLowerCase()} options={[["auto", "自动"], ["nvidia", "NVIDIA"], ["amd", "AMD"], ["intel", "Intel"]]} disabledOptions={disabledVendors} onChange={(value) => onSettings({ ChartRenderHardwareEncoder: value })} disabled={locked} />
-          <ChipSetting label="显卡速度预设" value={hwPreset} options={HW_PRESETS} onChange={(value) => onSettings({ ChartRenderHardwarePreset: value })} disabled={locked} />
+          <ChipSetting label="编码速度" description="越往右越慢，同样大小下画质越好" value={hwAuto ? "auto" : hwPreset} options={[["auto", `${autoLabel}（${autoSpeed.hardware}）`], ...HW_PRESETS]} onChange={(value) => onSettings({ ChartRenderHardwarePreset: value })} disabled={locked} />
           {family === "amf" || family === "qsv" ? <div className="settings-note">AMD / Intel 会把 p1–p7 换算成各自的速度档位。</div> : null}
         </> : null}
         {(device === "cpu" || fellBack) && !isProRes ? <>
-          <ChipSetting label="CPU 速度预设" value={cpuPreset} options={(isVvc ? ["faster", "fast", "medium", "slow", "slower"] : CPU_PRESETS).map((p) => [p, p] as [string, string])} onChange={(value) => onSettings({ ChartRenderCpuPreset: value })} disabled={locked} />
+          <ChipSetting label={device === "cpu" ? "编码速度" : "CPU 编码速度"} description="越往右越慢，同样大小下画质越好" value={cpuAuto ? "auto" : cpuPreset} options={[["auto", `${isVvc ? "自动" : autoLabel}（${isVvc ? "faster" : autoSpeed.cpu}）`] as [string, string], ...(isVvc ? ["faster", "fast", "medium", "slow", "slower"] : CPU_PRESETS).map((p) => [p, p] as [string, string])]} onChange={(value) => onSettings({ ChartRenderCpuPreset: value })} disabled={locked} />
           {["slow", "slower", "veryslow"].includes(cpuPreset) ? <div className="settings-note warning-note">慢预设画质略好，但每一帧都要等编码器，渲染会明显变慢。</div> : null}
           {codec === "av1" ? <div className="settings-note">AV1 CPU 编码（SVT-AV1）会把这些档位换算成它自己的速度值。</div> : null}
         </> : null}
@@ -832,15 +838,13 @@ function CapturePage({ state, onSettings, locked }: { state: WebUiState; onSetti
       </>}
       <SettingSwitch label="渲染时显示判定文字" description="Perfect、Early、Late 等" value={s.ChartRenderShowHitJudgments} onChange={(value) => onSettings({ ChartRenderShowHitJudgments: value })} disabled={locked} />
       <ChipSetting label="渲染预览" description="渲染时屏幕上显示的画面" value={s.ChartRenderPreviewMode.toLowerCase()} options={[["full", "完整"], ["dim", "暗色"], ["minimal", "极简（略快）"]]} onChange={(value) => onSettings({ ChartRenderPreviewMode: value })} disabled={locked} />
+      <ChipSetting label="回读格式" description="从显卡读回画面时的像素排列，一般不用改；个别显卡回读出错或很慢时可以换一个试试" value={s.ChartRenderCaptureFormat.toLowerCase()} options={[["rgba", "RGBA（默认）"], ["bgra", "BGRA"]]} onChange={(value) => onSettings({ ChartRenderCaptureFormat: value })} disabled={locked} />
     </Panel>
     <Panel title="按键显示 Mod">
       <SettingSwitch label="兼容其他按键显示 Mod（实验性）" description={camera ? "摄像机渲染录不到按键显示，改用游戏画面渲染才会生效。" : "JRP、JKV、Quartz 的雨键、KPS 和按键动画跟随视频时间（CheryTools 自带适配）。出现画面异常时可以关闭。"} value={s.ChartRenderCompatKeyViewers} onChange={(value) => onSettings({ ChartRenderCompatKeyViewers: value })} disabled={locked || camera} />
     </Panel>
     <Panel title="音频">
-      <div className="settings-grid">
-        <SettingNumber label="音频同步偏移（正数让声音更晚）" value={s.ChartRenderAudioSyncOffsetMs} min={-5000} max={5000} step={1} onChange={(value) => onSettings({ ChartRenderAudioSyncOffsetMs: value })} suffix="毫秒" disabled={locked} />
-        <SettingSelect label="回读格式" group="ChartRenderCaptureFormat" value={s.ChartRenderCaptureFormat.toLowerCase()} options={["rgba", "bgra"]} onChange={(value) => onSettings({ ChartRenderCaptureFormat: value })} disabled={locked} />
-      </div>
+      <SettingNumber label="音频同步偏移（正数让声音更晚）" value={s.ChartRenderAudioSyncOffsetMs} min={-5000} max={5000} step={1} onChange={(value) => onSettings({ ChartRenderAudioSyncOffsetMs: value })} suffix="毫秒" disabled={locked} />
     </Panel>
   </>;
 }

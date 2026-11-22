@@ -63,6 +63,17 @@ export const QUALITY_LABEL: Record<string, string> = {
   nvenc: "CQ", nvenc_av1: "CQ", amf: "QVBR 质量", qsv: "ICQ", x264: "CRF", x265: "CRF", svtav1: "CRF", aom: "CRF", vvenc: "QP",
 };
 
+// Encoder speed a tier uses while the speed setting is "auto" (ChartRenderQualityTiers.HardwarePresetRank
+// / CpuPreset). Only the balanced / CPU encoder modes follow it.
+export function tierSpeed(tier: string): { hardware: string; cpu: string } {
+  switch (tier) {
+    case "small":
+    case "high": return { hardware: "p6", cpu: "faster" };
+    case "standard": return { hardware: "p5", cpu: "veryfast" };
+    default: return { hardware: "p4", cpu: "veryfast" };
+  }
+}
+
 export function tierQuality(state: WebUiState, family: string | null, tier: string): number | null {
   if (!family) return null;
   const row = state.quality?.quality?.[family];

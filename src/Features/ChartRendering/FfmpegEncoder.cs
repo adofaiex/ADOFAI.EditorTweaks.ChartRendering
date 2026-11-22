@@ -115,6 +115,16 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 && encoderMode != ChartRenderOptionValues.EncoderCustom;
         }
 
+        // A tier also picks the encoder speed, unless the user chose a speed themselves or picked one
+        // of the older fixed speed modes (fastest / quality).
+        private bool UsesTierSpeed()
+        {
+            return UsesTier()
+                && (encoderMode == ChartRenderOptionValues.EncoderAutoBalanced
+                    || encoderMode == ChartRenderOptionValues.EncoderBalanced
+                    || encoderMode == ChartRenderOptionValues.EncoderCpuCompatibility);
+        }
+
         // 0 = no cap (near-lossless tier).
         private int TierCapMbps()
         {
@@ -888,6 +898,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 }
             }
 
+            if (UsesTierSpeed())
+            {
+                return ChartRenderQualityTiers.HardwarePresetRank(qualityTier);
+            }
+
             switch (encoderMode)
             {
                 case ChartRenderOptionValues.EncoderFastest:
@@ -959,6 +974,11 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             if (cpuPreset != ChartRenderOptionValues.PresetFollowEncoderMode)
             {
                 return cpuPreset;
+            }
+
+            if (UsesTierSpeed())
+            {
+                return ChartRenderQualityTiers.CpuPreset(qualityTier);
             }
 
             switch (encoderMode)
