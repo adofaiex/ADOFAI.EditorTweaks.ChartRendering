@@ -12,7 +12,24 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
     // a killed game process or an abandoned FFmpeg worker, and reports how much space is used.
     internal static class ChartRenderWorkspace
     {
-        public const string TempDirectoryPrefix = "CurrentRender";
+        private const string TempDirectoryPrefix = "CurrentRender_";
+        private const string OwnershipMarker = ".adofai-chart-render-workspace";
+        private const string TemporaryRender = "temporary-v1";
+        private const string DiagnosticRender = "diagnostic-v1";
+
+        public static string CreateTempDirectory(string workspace, bool retainForDiagnostics)
+        {
+            string directory = Path.Combine(workspace, TempDirectoryPrefix
+                + DateTime.Now.ToString("yyyyMMdd_HHmmss") + "_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            using (StreamWriter marker = new StreamWriter(new FileStream(
+                Path.Combine(directory, OwnershipMarker), FileMode.CreateNew, FileAccess.Write)))
+            {
+                marker.Write(retainForDiagnostics ? DiagnosticRender : TemporaryRender);
+            }
+
+            return directory;
+        }
 
         // At mod load no render can be running in this process, so every leftover folder is stale.
         public static void CleanupAtStartup(Settings settings)
@@ -33,9 +50,9 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
         }
 
-        // Deletes every CurrentRender* folder except keep. A folder still in use (an abandoned FFmpeg
-        // worker holding a file) cannot be deleted; it is skipped and tried again next time.
-        public static int DeleteTempDirectories(string workspace, string? keep, out long bytesFreed)
+        // Only remove folders created by this Mod. Automatic cleanup leaves diagnostic captures alone.
+        public static int DeleteTempDirectories(string workspace, string? keep, out long bytesFreed,
+            bool includeDiagnostics = false)
         {
             bytesFreed = 0;
             if (string.IsNullOrEmpty(workspace) || !Directory.Exists(workspace))
@@ -44,7 +61,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
 
             int removed = 0;
-            foreach (string directory in Directory.EnumerateDirectories(workspace, TempDirectoryPrefix + "*"))
+            foreach (string directory in EnumerateOwnedDirectories(workspace, includeDiagnostics))
             {
                 if (keep != null && string.Equals(Path.GetFullPath(directory), Path.GetFullPath(keep), StringComparison.OrdinalIgnoreCase))
                 {
@@ -77,7 +94,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             {
                 if (Directory.Exists(workspace))
                 {
-                    foreach (string directory in Directory.EnumerateDirectories(workspace, TempDirectoryPrefix + "*"))
+                    foreach (string directory in EnumerateOwnedDirectories(workspace, includeDiagnostics: true))
                     {
                         tempFolders++;
                         tempBytes += GetDirectorySize(directory);
@@ -106,6 +123,42 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 ["logFiles"] = logFiles,
                 ["logBytes"] = logBytes,
             };
+        }
+
+        private static IEnumerable<string> EnumerateOwnedDirectories(string workspace, bool includeDiagnostics)
+        {
+            foreach (string directory in Directory.EnumerateDirectories(workspace, TempDirectoryPrefix + "*"))
+            {
+                if (IsOwnedDirectory(directory, includeDiagnostics))
+                {
+                    yield return directory;
+                }
+            }
+        }
+
+        private static bool IsOwnedDirectory(string directory, bool includeDiagnostics)
+        {
+            try
+            {
+                string marker = Path.Combine(directory, OwnershipMarker);
+                if ((File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0
+                    || !File.Exists(marker)
+                    || (File.GetAttributes(marker) & FileAttributes.ReparsePoint) != 0)
+                {
+                    return false;
+                }
+
+                string kind = File.ReadAllText(marker);
+                return kind == TemporaryRender || (includeDiagnostics && kind == DiagnosticRender);
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
         }
 
         public static long GetDirectorySize(string directory)

@@ -770,14 +770,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 Directory.CreateDirectory(workspace);
                 Directory.CreateDirectory(export);
 
-                // A unique directory keeps an abandoned worker from blocking the next render; the
-                // old fixed "CurrentRender" path could still be held by FFmpeg after a timeout.
-                tempDirectory = Path.Combine(workspace, "CurrentRender_"
-                    + DateTime.Now.ToString("yyyyMMdd_HHmmss")
-                    + "_" + Guid.NewGuid().ToString("N").Substring(0, 8));
-                Directory.CreateDirectory(tempDirectory);
-                // Only this render uses the workspace now, so every other temp folder is a leftover.
-                // A folder an abandoned FFmpeg worker still holds cannot be deleted and is skipped.
+                tempDirectory = ChartRenderWorkspace.CreateTempDirectory(workspace, KeepTempFiles);
                 int removed = ChartRenderWorkspace.DeleteTempDirectories(workspace, tempDirectory, out long freed);
                 if (removed > 0)
                 {

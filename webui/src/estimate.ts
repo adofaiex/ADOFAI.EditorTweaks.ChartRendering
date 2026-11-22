@@ -116,7 +116,9 @@ export function estimateSize(state: WebUiState, tier: TierId = normalizedTier(st
   if (seconds == null) return { typical: null, max: null, kind: "nochart" };
   const audio = audioMbps(settings);
   const toMb = (mbps: number) => (mbps + audio) * seconds / 8;
-  const codec = settings.ChartRenderVideoCodec.toLowerCase();
+  // The legacy custom encoder always uses H.264 and bypasses the quality tier.
+  const customEncoder = settings.ChartRenderEncoderMode.toLowerCase() === "custom";
+  const codec = customEncoder ? "h264" : settings.ChartRenderVideoCodec.toLowerCase();
   if (codec === "prores") {
     const mb = toMb(proResMbps(settings));
     return { typical: mb, max: mb * 1.05, kind: "fixed" };
@@ -127,9 +129,9 @@ export function estimateSize(state: WebUiState, tier: TierId = normalizedTier(st
     return { typical: toMb(target), max: toMb(target) * 1.1, kind: "cbr" };
   }
 
-  if (tier === "custom") {
+  if (customEncoder || tier === "custom") {
     if (settings.ChartRenderBitrateMbps > 0) {
-      return { typical: toMb(settings.ChartRenderBitrateMbps), max: toMb(settings.ChartRenderBitrateMbps * 1.5), kind: "vbr" };
+      return { typical: toMb(settings.ChartRenderBitrateMbps), max: toMb(Math.ceil(settings.ChartRenderBitrateMbps * 1.5)), kind: "vbr" };
     }
     return { typical: null, max: null, kind: "unbounded" };
   }

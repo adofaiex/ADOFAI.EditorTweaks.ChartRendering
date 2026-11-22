@@ -208,6 +208,27 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             {
                 Dictionary<string, object> r2 = new Dictionary<string, object>(renderState);
                 r2["outputPath"] = Path.GetFileName(renderState.TryGetValue("outputPath", out object p) ? p as string ?? string.Empty : string.Empty);
+                // Renderer and FFmpeg messages can contain local paths, including before the task
+                // reaches its terminal state. Use only fixed text for the viewer.
+                string summary = (renderState["state"] as string) switch
+                {
+                    nameof(ChartRenderTaskState.Completed) => "视频已成功导出。",
+                    nameof(ChartRenderTaskState.Failed) => "渲染任务失败。",
+                    nameof(ChartRenderTaskState.Canceled) => "渲染已取消。",
+                    _ => string.Empty,
+                };
+                r2["message"] = summary;
+                if (renderState.TryGetValue("progress", out object progress)
+                    && progress is Dictionary<string, object> progressState)
+                {
+                    r2["progress"] = new Dictionary<string, object>(progressState)
+                    {
+                        ["detail"] = string.IsNullOrEmpty(summary)
+                            ? renderState["active"] is true ? "正在处理渲染任务。" : "等待开始渲染。"
+                            : summary,
+                    };
+                }
+
                 copy["render"] = r2;
             }
 

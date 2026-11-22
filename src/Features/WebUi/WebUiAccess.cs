@@ -20,7 +20,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
     //   new link each time; the tablet can simply bookmark http://<pc>:<port>/.
     // - A separate view key gives a read-only link: progress and settings summary only, no start,
     //   cancel or settings changes, and no addresses, tokens or local paths in the state it receives.
-    // - "Forget all devices" regenerates both keys.
+    // - "Forget all devices" regenerates both keys and the current launch's pairing token.
     //
     // Cookies are HttpOnly and SameSite=Strict, so another website in the same browser cannot use them.
     internal static class WebUiAccess
@@ -54,10 +54,14 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.WebUi
             return changed;
         }
 
-        public static void ForgetAllDevices(Settings settings)
+        public static string ForgetAllDevices(Settings settings)
         {
-            settings.WebUiDeviceKey = NewKey();
-            settings.WebUiViewKey = NewKey();
+            string deviceKey = NewKey();
+            string viewKey = NewKey();
+            string pairingToken = NewKey();
+            settings.WebUiDeviceKey = deviceKey;
+            settings.WebUiViewKey = viewKey;
+            return pairingToken;
         }
 
         public static string NewKey()

@@ -1,6 +1,7 @@
 import {
   Button,
   Message,
+  Modal,
   Spin,
   Switch,
 } from "@arco-design/web-react";
@@ -219,6 +220,9 @@ function App() {
         source.close();
         if (events === source) events = undefined;
         scheduleReconnect();
+        void detectSession().then((mode) => {
+          if (!disposed && mode === "unauthorized") setSession(mode);
+        });
       };
     };
 
@@ -310,6 +314,7 @@ function App() {
     try {
       const response = await postJson<T & { state?: WebUiState }>(path, body ?? {});
       if (response.state) setState(response.state);
+      if (path === "/api/access/forget") setSession("unauthorized");
       if (success) Message.success(success);
       return response;
     } catch (error) {
@@ -429,9 +434,10 @@ function Unauthorized() {
 
 function summaryText(state: WebUiState): string {
   const s = state.settings;
-  const tier = normalizedTier(s);
-  const codec = s.ChartRenderVideoCodec.toLowerCase();
-  const quality = codec === "prores" ? "ProRes" : s.ChartRenderConstantBitrate ? "恒定码率" : tier === "custom" ? "自定义画质" : `${TIERS.find((t) => t.id === tier)?.name ?? "标准"}画质`;
+  const customEncoder = s.ChartRenderEncoderMode.toLowerCase() === "custom";
+  const tier = customEncoder ? "custom" : normalizedTier(s);
+  const codec = customEncoder ? "h264" : s.ChartRenderVideoCodec.toLowerCase();
+  const quality = codec === "prores" ? "ProRes" : s.ChartRenderConstantBitrate && codec !== "vvc" ? "恒定码率" : tier === "custom" ? "自定义画质" : `${TIERS.find((t) => t.id === tier)?.name ?? "标准"}画质`;
   const capture = s.ChartRenderCaptureSource.toLowerCase() === "game-view" ? "游戏画面" : "摄像机";
   return `${s.ChartRenderWidth}×${s.ChartRenderHeight} · ${s.ChartRenderFps} 帧/秒 · ${labelFor("ChartRenderVideoCodec", codec).replace(/（.*）/, "")} · ${quality} · ${capture}`;
 }
@@ -771,6 +777,7 @@ function QualityPage({ state, onSettings, locked }: { state: WebUiState; onSetti
       {isProRes ? <div className="settings-note">ProRes 文件很大，适合导入剪辑软件；会自动使用 MOV，FLAC 会改为 ALAC。</div> : null}
     </Panel>
     <Panel title="画质" hint={renderSeconds(state) != null ? `按当前谱面 ${formatDuration(renderSeconds(state) ?? 0)}${s.ChartRenderUseSelectedRange && state.chart.selectionSeconds > 0 ? "（选中段落）" : ""}估算` : "加载谱面后显示大小估算"}>
+      {encoderMode === "custom" ? <div className="settings-note">自定义编码不使用画质档位。{describeEstimate(estimateSize(state))}</div> : <>
       <div className="tier-grid">
         {TIERS.map((t) => {
           const estimate = estimateSize(state, t.id);
@@ -793,6 +800,7 @@ function QualityPage({ state, onSettings, locked }: { state: WebUiState; onSetti
         : s.ChartRenderConstantBitrate ? <div className="settings-note">已打开恒定比特率，画质档位不生效（见下方详细编码设置）。</div>
         : <div className="settings-note">“通常约”是估算，粒子多的谱面会更大；“最多约”是上限，画面再复杂也不会超过（超出时画质会稍微下降）。带 ✓ 的是按你上次渲染的实际结果估算。</div>}
       <div className="settings-note">参考：B 站要求 1080p 高于 6 Mbps、4K 高于 20 Mbps；YouTube 推荐 1080p60 12 Mbps、4K60 53–68 Mbps。“标准”档的上限是 YouTube 推荐值的 2 倍，平台转码后仍有余量。</div>
+      </>}
       {sizeWarnings(state).map((w) => <div className="settings-note warning-note" key={w}>{w}</div>)}
       <SettingSwitch label="详细编码设置" description={`编码器、编码速度、${qLabel}、码率、CBR`} value={detailed} onChange={setDetailed} disabled={locked} />
       {detailed ? <div className="settings-section">
@@ -862,6 +870,23 @@ function QrCode({ text }: { text: string }) {
   return <div className="qr-code" dangerouslySetInnerHTML={{ __html: svg }} />;
 }
 
+async function copyText(text: string, label: string, success: string) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      Message.success(success);
+      return;
+    }
+  } catch {
+    // Some browsers reject clipboard writes even when the API is exposed.
+  }
+
+  Modal.info({
+    title: `手动复制${label}`,
+    content: <div className="import-box"><textarea aria-label={label} readOnly value={text} onFocus={(event) => event.currentTarget.select()} /></div>,
+  });
+}
+
 function ConnectPage({ state, onSettings, demo, onAction }: { state: WebUiState; onSettings: SettingsHandler; demo: boolean; onAction: (path: string, body?: unknown, success?: string) => Promise<unknown> }) {
   const s = state.settings;
   const [listening, setListening] = React.useState(false);
@@ -882,9 +907,6 @@ function ConnectPage({ state, onSettings, demo, onAction }: { state: WebUiState;
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [listening, onSettings]);
-  const copy = (text: string, done: string) => {
-    void navigator.clipboard?.writeText(text).then(() => Message.success(done), () => Message.info(text));
-  };
   return <div className="two-column">
     <Panel title="打开方式">
       <div className="setting-row"><div><strong>打开设置页快捷键</strong><span>点一下，再按新的按键（Esc 取消）</span></div><button type="button" className={`hotkey-button ${listening ? "is-listening" : ""}`} onClick={() => setListening(true)}>{listening ? "请按下按键…" : s.WebUiOpenHotkey}</button></div>
@@ -901,8 +923,8 @@ function ConnectPage({ state, onSettings, demo, onAction }: { state: WebUiState;
             <span>之后这台设备会被记住，<b>存成书签</b>就能直接打开，不用每次复制链接。</span>
             <code>{pairUrl.replace(/\?token=.*$/, "")}</code>
             <div className="button-row">
-              <Button className="secondary-button" icon={<IconCopy />} disabled={!viewUrl} onClick={() => copy(viewUrl, "已复制只读链接：打开后只能看进度，不能开始、取消或改设置。")}>复制只读链接</Button>
-              <Button className="danger-outline" onClick={() => demo ? Message.info("演示状态：会让所有设备和只读链接失效。") : onAction("/api/access/forget", undefined, "已让所有设备失效，需要重新扫码")}>忘记所有设备</Button>
+              <Button className="secondary-button" icon={<IconCopy />} disabled={!viewUrl} onClick={() => void copyText(viewUrl, "只读链接", "已复制只读链接：打开后只能看进度，不能开始、取消或改设置。")}>复制只读链接</Button>
+              <Button className="danger-outline" onClick={() => demo ? Message.info("演示状态：会让所有设备和只读链接失效。") : onAction("/api/access/forget", undefined, "已撤销所有设备。请从游戏重新打开设置页。")}>忘记所有设备</Button>
             </div>
           </div>
         </div> : <InfoBlock text="正在启动局域网服务。如果手机打不开，请在 Windows 防火墙中允许游戏访问网络。" />}
@@ -961,11 +983,11 @@ function ToolsPage({ state, onSettings, locked, demo, onAction, onOpenDocument }
       <SettingSwitch label="诊断模式" description="日志记录得更详细，渲染完保留临时文件方便检查。排查问题时再打开，平时关着。" value={state.settings.ChartRenderDiagnosticMode} onChange={(value) => onSettings({ ChartRenderDiagnosticMode: value })} disabled={locked} />
     </Panel>
     <Panel title="空间">
-      <div className="tool-row"><IconStorage /><div><strong>工作区</strong><span>临时文件 {ws ? formatBytes(ws.tempBytes) : "—"}{ws && ws.tempFolders > 0 ? `（${ws.tempFolders} 个文件夹）` : ""} · 日志 {ws ? `${ws.logFiles} 份 ${formatBytes(ws.logBytes)}` : "—"}</span></div><Button className="secondary-button" disabled={locked || !ws || ws.tempFolders === 0} onClick={() => onAction("/api/workspace/clean", undefined, "临时文件已清理")}>清理临时文件</Button></div>
+      <div className="tool-row"><IconStorage /><div><strong>工作区</strong><span>临时文件 {ws ? formatBytes(ws.tempBytes) : "—"}{ws && ws.tempFolders > 0 ? `（${ws.tempFolders} 个文件夹）` : ""} · 日志 {ws ? `${ws.logFiles} 份 ${formatBytes(ws.logBytes)}` : "—"}</span></div><Button className="secondary-button" disabled={locked || !ws || ws.tempFolders === 0} onClick={() => { if (window.confirm("清理本 Mod 的临时文件，包括诊断模式保留的文件？")) void onAction("/api/workspace/clean", undefined, "临时文件已清理"); }}>清理临时文件</Button></div>
     </Panel>
     <Panel title="预设与分享">
       {RENDER_PRESETS.map((preset) => <div className="tool-row" key={preset.id}><IconSettings /><div><strong>{preset.name}</strong><span>{preset.detail}</span></div><Button className="secondary-button" disabled={locked} onClick={() => { onSettings(preset.changes); Message.success(`已应用预设：${preset.name}`); }}>应用</Button></div>)}
-      <div className="tool-row"><IconLink /><div><strong>分享设置</strong><span>只包含渲染设置，不含路径、快捷键和设备信息。</span></div><div className="button-row"><Button className="secondary-button" onClick={() => { void navigator.clipboard?.writeText(shareCode()).then(() => Message.success("分享码已复制"), () => Message.info(shareCode())); }}>复制分享码</Button><Button className="secondary-button" disabled={locked} onClick={() => setImporting(true)}>导入</Button></div></div>
+      <div className="tool-row"><IconLink /><div><strong>分享设置</strong><span>只包含渲染设置，不含路径、快捷键和设备信息。</span></div><div className="button-row"><Button className="secondary-button" onClick={() => void copyText(shareCode(), "分享码", "分享码已复制")}>复制分享码</Button><Button className="secondary-button" disabled={locked} onClick={() => setImporting(true)}>导入</Button></div></div>
       {importing ? <div className="import-box"><textarea value={importText} onChange={(event) => setImportText(event.target.value)} placeholder="粘贴别人发给你的分享码（以 AETC1: 开头）" /><div className="button-row"><Button className="secondary-button" onClick={() => setImporting(false)}>取消</Button><Button className="primary-button" onClick={importCode}>导入</Button></div></div> : null}
       <div className="tool-row"><IconUndo /><div><strong>恢复默认</strong><span>把所有设置恢复成默认值（已记住的设备不受影响）。</span></div><Button className="danger-outline" disabled={locked} onClick={() => { if (window.confirm("把所有设置恢复成默认值？")) void onAction("/api/settings/reset", undefined, "已恢复默认设置"); }}>恢复默认</Button></div>
     </Panel>

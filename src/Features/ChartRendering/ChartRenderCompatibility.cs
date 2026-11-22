@@ -51,6 +51,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         private static MethodInfo? jipperCurrentTicks;
         private static MethodInfo? jipperReplacement;
         private static Type? jipperKeyViewerType;
+        private static Type? boundJipperKeyViewerType;
         private static Type? jipperRainManagerType;
         private static FieldInfo? jipperRainListField;
         private static FieldInfo? jipperRainImageField;
@@ -187,7 +188,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         {
             try
             {
-                return AccessTools.Field(keyViewer, "Instance")?.GetValue(null);
+                object? instance = AccessTools.Field(keyViewer, "Instance")?.GetValue(null);
+                return instance is UnityEngine.Object unityObject && unityObject == null ? null : instance;
             }
             catch
             {
@@ -205,7 +207,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 return null;
             }
 
-            object? instance = AccessTools.Field(keyViewer, "Instance")?.GetValue(null);
+            object? instance = JipperInstanceOf(keyViewer);
             if (instance == null || !(AccessTools.Field(keyViewer, "Keys")?.GetValue(instance) is Array keys))
             {
                 return null;
@@ -633,12 +635,10 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 // JKV and Quartz have their own adapters; each fails on its own without affecting JRP.
                 RunOtherAdapters(() => ChartRenderJkvAdapter.Begin(fps), "JKV begin");
                 RunOtherAdapters(() => ChartRenderQuartzAdapter.Begin(fps), "Quartz begin");
-                if (!adapterReady)
-                {
-                    ApplyJipperKeyViewerAdapter();
-                }
+                Type? keyViewer = FindJipperKeyViewerType();
+                BindJipperKeyViewerAdapter(keyViewer);
 
-                if (!adapterReady)
+                if (!adapterReady || boundJipperKeyViewerType != keyViewer)
                 {
                     return;
                 }
@@ -657,18 +657,20 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                 lastFrameIndex = Math.Max(0, frameIndex);
                 virtualTicks = lastFrameIndex * frameTicks;
 
-                // Jipper/JALib loads asynchronously and may finish after rendering has begun. Only try
-                // once its assembly is present, so renders without JRP pay nothing.
-                if (!adapterReady && discoveryEnabled && lastFrameIndex % JipperPoolCheckFrames == 0
-                    && FindJipperKeyViewerType() != null)
+                // JALib can supply the live KeyViewer after rendering has begun, even if the
+                // original assembly was already available when the adapter was installed.
+                if (discoveryEnabled && lastFrameIndex % JipperPoolCheckFrames == 0)
                 {
-                    ApplyJipperKeyViewerAdapter();
-                    if (adapterReady)
+                    Type? keyViewer = FindJipperKeyViewerType();
+                    if (keyViewer != null && keyViewer != boundJipperKeyViewerType)
                     {
-                        active = true;
-                        baselineSet = false;
-                        ChartRenderDiagnostics.Log("Jipper KeyViewer compatibility adapter late-loaded at frame "
-                            + lastFrameIndex + ".");
+                        BindJipperKeyViewerAdapter(keyViewer);
+                        active = adapterReady && boundJipperKeyViewerType == keyViewer;
+                        if (active)
+                        {
+                            ChartRenderDiagnostics.Log("Jipper KeyViewer compatibility adapter (re)bound at frame "
+                                + lastFrameIndex + ".");
+                        }
                     }
                 }
 
@@ -766,17 +768,39 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             }
         }
 
-        private static void ApplyJipperKeyViewerAdapter()
+        private static void BindJipperKeyViewerAdapter(Type? keyViewer)
         {
-            try
+            if (keyViewer == null || keyViewer == boundJipperKeyViewerType)
             {
-                Type? keyViewer = AccessTools.TypeByName("JipperResourcePack.KeyViewerContents.KeyViewer");
-                if (keyViewer == null)
+                return;
+            }
+
+            if (harmony != null)
+            {
+                active = false;
+                try
                 {
-                    ChartRenderDiagnostics.Log("Jipper KeyViewer compatibility skipped: KeyViewer is not loaded.");
+                    harmony.UnpatchAll(HarmonyId);
+                }
+                catch (Exception exception)
+                {
+                    ChartRenderDiagnostics.Log("Could not rebind Jipper KeyViewer compatibility: " + exception.Message);
                     return;
                 }
 
+                ResetJipperAdapter();
+                clockInitialized = false;
+                baselineSet = false;
+                JipperPresses.Clear();
+            }
+
+            ApplyJipperKeyViewerAdapter(keyViewer);
+        }
+
+        private static void ApplyJipperKeyViewerAdapter(Type keyViewer)
+        {
+            try
+            {
                 MethodInfo? currentTicks = AccessTools.PropertyGetter(keyViewer, "CurrentTicks");
                 if (currentTicks == null)
                 {
@@ -814,7 +838,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     return;
                 }
 
-                jipperRainManagerType = AccessTools.TypeByName("JipperResourcePack.KeyViewerContents.RainManager");
+                Assembly assembly = keyViewer.Assembly;
+                jipperRainManagerType = assembly.GetType("JipperResourcePack.KeyViewerContents.RainManager", false);
                 List<MethodInfo> clockReaders = new List<MethodInfo>();
                 AddTarget(clockReaders, AccessTools.Inner(keyViewer, "KeyViewerUpdater"), "Update");
                 AddTarget(clockReaders, jipperRainManagerType, "Update");
@@ -825,8 +850,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     return;
                 }
 
-                Type? rainType = AccessTools.TypeByName("JipperResourcePack.KeyViewerContents.Rain");
-                Type? rainPoolType = AccessTools.TypeByName("JipperResourcePack.KeyViewerContents.RainPool");
+                Type? rainType = assembly.GetType("JipperResourcePack.KeyViewerContents.Rain", false);
+                Type? rainPoolType = assembly.GetType("JipperResourcePack.KeyViewerContents.RainPool", false);
                 jipperRainListField = jipperRainManagerType == null ? null : AccessTools.Field(jipperRainManagerType, "RainList");
                 jipperRainImageField = rainType == null ? null : AccessTools.Field(rainType, "Image");
                 jipperRainPoolCountField = rainPoolType == null ? null : AccessTools.Field(rainPoolType, "_poolCount");
@@ -873,6 +898,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
                     }
 
                     harmony = candidate;
+                    boundJipperKeyViewerType = keyViewer;
                     adapterReady = true;
                     ChartRenderDiagnostics.Log("Jipper KeyViewer compatibility adapter ready (2 clock readers + Work prefix).");
                 }
@@ -894,6 +920,7 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         {
             harmony = null;
             adapterReady = false;
+            boundJipperKeyViewerType = null;
             jipperCurrentTicks = null;
             jipperReplacement = null;
             jipperRainManagerType = null;
