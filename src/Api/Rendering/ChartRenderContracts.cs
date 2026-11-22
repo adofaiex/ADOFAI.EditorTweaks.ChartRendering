@@ -286,6 +286,7 @@ namespace ADOFAI.EditorTweaks.Api.Rendering
                 ReadbackFormat = ReadbackFormat,
                 PreviewMode = PreviewMode,
                 Quality = Quality,
+                QualityTier = QualityTier,
                 BitrateMbps = BitrateMbps,
                 ConstantBitrate = ConstantBitrate,
                 CustomEncoderPreset = CustomEncoderPreset ?? string.Empty,
