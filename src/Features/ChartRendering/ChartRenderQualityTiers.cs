@@ -51,17 +51,18 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
             ["vvenc"] = new[] { 34, 30, 27, 23 },      // QP
         };
 
-        // Encoder speed a tier uses while the speed setting is left on "follow". Slower presets
-        // compress better, which matters most when the cap is tight (small) or for archives (high);
-        // near-lossless has bitrate to spare, so it keeps the faster default. Measured with the
-        // bundled FFmpeg on a noisy 1080p60 clip: NVENC p4 -> p6 costs about 10% speed, x264
-        // veryfast -> faster about 17% (fast would be about 45%, so CPU only moves one step).
+        // Encoder speed a tier uses while the speed setting is left on "follow": small files favour
+        // render speed, archive / editing tiers favour compression. Measured with the bundled FFmpeg
+        // on a detailed 1080p60 clip under a tight cap (RTX, NVENC H.264): p1, p4, p6 and p7 encode
+        // at about the same speed (98 / 101 / 97 / 91 fps), but p1 overshoots the cap by ~20% at
+        // lower quality, so small stops at p4. x264 veryfast -> faster costs about 17% speed and
+        // fast about 45%, so the CPU side only moves one step.
         public static int HardwarePresetRank(string tier)
         {
             switch (Normalize(tier))
             {
-                case Small:
                 case High:
+                case Lossless:
                     return 6;
                 case Standard:
                     return 5;
@@ -74,8 +75,8 @@ namespace ADOFAI.EditorTweaks.ChartRendering.Features.ChartRendering
         {
             switch (Normalize(tier))
             {
-                case Small:
                 case High:
+                case Lossless:
                     return "faster";
                 default:
                     return "veryfast";

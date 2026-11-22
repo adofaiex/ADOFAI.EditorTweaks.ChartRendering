@@ -560,7 +560,7 @@ temp_video.mp4 | temp_video.mov
 
 编码器的实际限制取上限的 90%：同一段噪点画面上 NVENC 和 x264 会超出 `-maxrate` 9–10%，取 90% 后实测 x264 23.6 / NVENC 24.2 Mbps（上限 24）。libaom 超得更多，所以只给 50%。AMD / Intel 的参数在真实硬件上还没验证。
 
-档位还决定编码速度（`ChartRenderQualityTiers.HardwarePresetRank` / `CpuPreset`），只在速度设置为“自动”、编码器模式为自动均衡 / 均衡 / CPU 兼容时生效：小文件和高质量为 p6 / `faster`，标准为 p5 / `veryfast`，近似无损为 p4 / `veryfast`。上限紧的时候慢预设压缩效率更高。实测（1080p60 噪点画面）NVENC p4→p6 约慢 10%，x264 veryfast→faster 约慢 17%、→fast 约慢 45%，所以 CPU 只调一档。SVT-AV1、libaom、VVenC 跟随时保持原来的固定速度。
+档位还决定编码速度（`ChartRenderQualityTiers.HardwarePresetRank` / `CpuPreset`），只在速度设置为“自动”、编码器模式为自动均衡 / 均衡 / CPU 兼容时生效：小文件为 p4 / `veryfast`（偏重速度），标准为 p5 / `veryfast`，高质量和近似无损为 p6 / `faster`（偏重压缩）。实测（RTX，1080p60 细节画面，4 Mbps 上限）NVENC p1 / p4 / p6 / p7 编码速度为 98 / 101 / 97 / 91 fps，几乎一样；但 p1 体积超出约 20%、SSIM 0.712 低于 p4–p7 的 0.722，所以小文件不用 p1。x264 veryfast→faster 约慢 17%、→fast 约慢 45%，所以 CPU 只调一档。SVT-AV1、libaom、VVenC 跟随时保持原来的固定速度。
 
 渲染结束后 `ChartRenderSession.RecordOutputSize` 记录“平均视频码率 / 上限”，按 `编码格式|档位` 保存在 `ChartRenderSizeStats`（和上次的值各取一半），设置页的“通常约”用它估算。
 

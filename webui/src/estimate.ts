@@ -67,8 +67,8 @@ export const QUALITY_LABEL: Record<string, string> = {
 // / CpuPreset). Only the balanced / CPU encoder modes follow it.
 export function tierSpeed(tier: string): { hardware: string; cpu: string } {
   switch (tier) {
-    case "small":
-    case "high": return { hardware: "p6", cpu: "faster" };
+    case "high":
+    case "lossless": return { hardware: "p6", cpu: "faster" };
     case "standard": return { hardware: "p5", cpu: "veryfast" };
     default: return { hardware: "p4", cpu: "veryfast" };
   }
